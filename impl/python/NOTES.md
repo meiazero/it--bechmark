@@ -33,7 +33,8 @@ was performed. All generated acceptance evidence remains in
 
 The M4 independent review identified a shared stage issue: `channel_conv` draws
 new taps inside the timed repetition instead of using a pregenerated tap batch.
-M7 must resolve this consistently across languages before performance reporting.
+This historical finding is resolved by the lecture refactor below.
+M7 will recheck the completed implementations before performance reporting.
 
 Independent review reported no blocking or nonblocking findings. `make golden`
 and `make test` passed all 23 checks. Ruff 0.16.9 was already available in the
@@ -43,3 +44,30 @@ dependency. Final CLI exception handling names the expected runtime error classe
 No optimization has been applied. M8 will inspect one profiler round before
 changing measured hotspots. Stage CP removal explicitly copies the slice to
 measure the removal operation consistently with the other implementations.
+
+## Lecture refactor — September 30, 2026
+
+The pipeline now names transmit/receive signals and the tensor dimensions explicitly.
+Pilot values and the Gray axis table are retained instead of rebuilding invariant
+arrays. Batch vectorization and PCG64 draw shapes/order remain unchanged. No buffer
+pool or dependency was added; the single profiler round remains pending for M8.
+
+The pending stage defect is resolved: `channel_conv` uses the pregenerated tap
+batch. End-to-end stage repetitions now derive distinct deterministic seeds,
+matching the repetition rule already used by C++ and Rust. Stage nanoseconds use
+OFDM symbols as the denominator. Comments distinguish the unscaled channel DFT
+from unitary signal FFTs and exact channel zeros from small nonzero gains.
+No contract value or schema changed. There is no measured speedup claim.
+
+### Refactor acceptance and independent review
+
+`make doctor`, `make golden`, and `make test` passed (24 tests). All 30 retained
+CLI artifacts match their pre-refactor numerical outputs and metadata exactly
+when setup/warmup/work and stage timing fields are excluded. The local evidence
+is `results/refactor/comparison.json`; `results/refactor/verify.py` regenerates
+that comparison. E2E now also checks finite, positive isolated stage durations
+and finite, nonnegative phase durations. No timing result proves a speedup.
+
+An independent read-only explorer review found no blocker. Rust formatting and
+Clippy with warnings denied passed; Python and shared E2E Ruff checks passed.
+The frozen contract and all lockfiles remain byte-unchanged.

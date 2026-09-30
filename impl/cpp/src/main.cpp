@@ -18,12 +18,13 @@
 namespace fs = std::filesystem;
 using Clock = std::chrono::steady_clock;
 const fs::path root = fs::weakly_canonical(PROJECT_ROOT);
-constexpr U64 batch_bits = 256 * 672;
+constexpr U64 batch_bits = BITS_PER_BATCH;
 
 std::string read(const fs::path& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file) throw std::invalid_argument("Cannot read " + path.string());
-    std::ostringstream text; text << file.rdbuf();
+    std::ostringstream text;
+    text << file.rdbuf();
     if (file.bad()) throw std::invalid_argument("Failed reading " + path.string());
     return text.str();
 }
@@ -71,7 +72,7 @@ void validate(const Json& config, const std::string& mode) {
     U64 max = integer(ber["max_bits"], "max_bits", 1, std::numeric_limits<U64>::max() - batch_bits + 1);
     if (min > max / batch_bits) throw std::invalid_argument("max_bits below minimum batch payload");
     if (!ber["ebn0_db"].is_array() || ber["ebn0_db"].empty()) throw std::invalid_argument("Empty Eb/N0 points");
-    for (const auto& point : ber["ebn0_db"]) noise_variance(number(point), config);
+    for (const auto& point : ber["ebn0_db"]) noise_variance(number(point), config["E_sym"].get<double>());
     object_keys(config["perf"], profile["perf"]);
     if (!config["perf"]["ebn0_db"].is_number_unsigned() || config["perf"]["ebn0_db"] != 10)
         throw std::invalid_argument("perf Eb/N0 must be integer 10");
@@ -194,7 +195,9 @@ int main(int argc, char** argv) {
         }
         if (config_path.empty() || out_path.empty() || workers == 0 ||
             (mode != "golden" && mode != "ber" && mode != "perf" && mode != "stages")) throw std::invalid_argument("Missing or invalid CLI option");
-        config_bytes = read(config_path); config = parse(config_bytes); validate(config, mode);
+        config_bytes = read(config_path);
+        config = parse(config_bytes);
+        validate(config, mode);
     } catch (const std::exception& e) { std::cerr << "Invalid configuration: " << e.what() << '\n'; return 2; }
     try {
         Json base = {{"schema_version", 1}, {"impl", "cpp"}, {"mode", mode},
@@ -203,11 +206,13 @@ int main(int argc, char** argv) {
             {"config_sha256", capture({"sha256sum"}, config_bytes)}, {"workers", workers}};
         std::vector<Json> records;
         if (mode == "golden") {
+            const DspConfig dsp_config(config);
             for (const auto& file : fs::directory_iterator(root / "contract/golden")) {
                 if (file.path().extension() != ".json") continue;
-                auto vector = parse(read(file.path())); auto record = base;
+                auto vector = parse(read(file.path()));
+                auto record = base;
                 record["case_id"] = vector["case_id"];
-                record["outputs"] = golden(vector["case_id"], vector["inputs"], config);
+                record["outputs"] = golden(vector["case_id"], vector["inputs"], dsp_config);
                 records.push_back(record);
             }
         } else {
@@ -221,7 +226,8 @@ int main(int argc, char** argv) {
             double warmup_s = seconds(warm_start);
             Json points = mode == "ber" ? config["ber"]["ebn0_db"] : Json::array({10});
             for (std::size_t p = 0; p < points.size(); ++p) {
-                double point = points[p]; Counts counts;
+                double point = points[p];
+                Counts counts;
                 U64 limit = mode == "ber" ? (config["ber"]["max_bits"].get<U64>() + batch_bits - 1) / batch_bits
                           : mode == "perf" ? config["perf"]["n_batches"].get<U64>() : 1;
                 auto work_start = Clock::now();
@@ -234,9 +240,14 @@ int main(int argc, char** argv) {
                         counts.add(result);
                         if (mode == "ber" && counts.batches >= config["ber"]["min_batches"].get<U64>() &&
                             counts.errors >= config["ber"]["target_errors"].get<U64>()) {
-                            status = "target_errors"; stop = true; break;
+                            status = "target_errors";
+                            stop = true;
+                            break;
                         }
-                        if (mode == "ber" && counts.batches * batch_bits >= config["ber"]["max_bits"].get<U64>()) { stop = true; break; }
+                        if (mode == "ber" && counts.batches * batch_bits >= config["ber"]["max_bits"].get<U64>()) {
+                            stop = true;
+                            break;
+                        }
                     }
                     if (stop) break;
                     first = last;
@@ -245,7 +256,7 @@ int main(int argc, char** argv) {
                 if (mode == "stages") timings = stage_worker->stages(batch_seed(seed, p, 0), point);
                 double work_s = seconds(work_start);
                 auto record = base;
-                record.update({{"ebn0_db", point}, {"n_batches", counts.batches}, {"n_symbols", counts.batches * 256},
+                record.update({{"ebn0_db", point}, {"n_batches", counts.batches}, {"n_symbols", counts.batches * SYMBOLS_PER_BATCH},
                     {"n_bits", counts.batches * batch_bits}, {"n_errors", counts.errors}, {"sum_batch_errors_sq", counts.squares},
                     {"n_symbols_with_errors", counts.symbols_with_errors}, {"zf_zero_count", counts.zeros}, {"status", status},
                     {"setup_s", setup_s}, {"warmup_s", warmup_s}, {"work_s", work_s}});

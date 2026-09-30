@@ -19,7 +19,13 @@ sys.path.insert(0, str(ROOT))
 from tools import contract
 
 MASK = (1 << 64) - 1
-BATCH_BITS = 256 * 672
+FFT_SIZE = 256
+CP_LENGTH = 32
+SAMPLES_WITH_CP = FFT_SIZE + CP_LENGTH
+SYMBOLS_PER_BATCH = 256
+BITS_PER_OFDM_SYMBOL = 672
+BATCH_BITS = SYMBOLS_PER_BATCH * BITS_PER_OFDM_SYMBOL
+GRAY_AXIS_LEVELS = np.array([-3, -1, 3, 1])
 SQRT10 = math.sqrt(10)
 
 
@@ -45,20 +51,22 @@ def encode(values: np.ndarray) -> list:
 
 def map_qam(bits: np.ndarray) -> np.ndarray:
     groups = bits.reshape(*bits.shape[:-1], -1, 4)
-    levels = np.array([-3, -1, 3, 1])
     return (
-        levels[2 * groups[..., 0] + groups[..., 1]]
-        + 1j * levels[2 * groups[..., 2] + groups[..., 3]]
+        GRAY_AXIS_LEVELS[2 * groups[..., 0] + groups[..., 1]]
+        + 1j * GRAY_AXIS_LEVELS[2 * groups[..., 2] + groups[..., 3]]
     ) / SQRT10
 
 
 def demap(values: np.ndarray) -> np.ndarray:
     axes = np.stack((values.real, values.imag), axis=-1) * SQRT10
-    bits = np.stack((axes >= 0, (axes >= -2) & (axes < 2)), axis=-1)
+    sign_bits = axes >= 0
+    inner_bits = (axes >= -2) & (axes < 2)
+    bits = np.stack((sign_bits, inner_bits), axis=-1)
     return bits.reshape(*values.shape[:-1], -1).astype(np.uint8)
 
 
 def convolve(values: np.ndarray, taps: np.ndarray) -> np.ndarray:
+    """Keep the causal symbol prefix; the channel tail is outside the receive window."""
     output = np.zeros_like(values)
     for delay in range(taps.shape[-1]):
         output[..., delay:] += (
@@ -68,6 +76,7 @@ def convolve(values: np.ndarray, taps: np.ndarray) -> np.ndarray:
 
 
 def equalize(data: np.ndarray, estimates: np.ndarray) -> tuple[np.ndarray, int]:
+    """Count exact channel zeros separately; small nonzero gains remain true ZF."""
     nonzero = estimates != 0
     return np.divide(data, estimates, out=np.zeros_like(data), where=nonzero), int(
         np.count_nonzero(~nonzero)
@@ -75,44 +84,55 @@ def equalize(data: np.ndarray, estimates: np.ndarray) -> tuple[np.ndarray, int]:
 
 
 def noise_variance(point: float, config: dict) -> float:
-    value = config["E_sym"] / (672 * 10 ** (point / 10))
+    value = config["E_sym"] / (BITS_PER_OFDM_SYMBOL * 10 ** (point / 10))
     if not math.isfinite(value) or value <= 0:
         raise ValueError("Eb/N0 exceeds the finite noise range")
     return value
 
 
 class Worker:
+    """Prepare geometry once; the last tensor axis follows samples or subcarriers.
+
+    Batched operations keep 256 independent channel realizations on the first axis.
+    """
+
     def __init__(self, config: dict) -> None:
         self.config = config
-        self.data = np.array(config["data_bins"]) % 256
-        self.pilots = np.array(config["pilot_bins"]) % 256
+        self.data_indices = np.array(config["data_bins"]) % FFT_SIZE
+        self.pilot_indices = np.array(config["pilot_bins"]) % FFT_SIZE
+        self.pilot_values = np.array(config["pilots"])
+        # Interpolate in physical bin coordinates, including the gap across DC.
         bins = np.array(config["pilot_bins"])
         self.right = np.searchsorted(bins, config["data_bins"], side="right")
         self.left = self.right - 1
         self.fraction = (np.array(config["data_bins"]) - bins[self.left]) / (
             bins[self.right] - bins[self.left]
         )
-        self.tap_scale = np.sqrt(np.array(config["pdp"]) / 2)
+        self.tap_scales = np.sqrt(np.array(config["pdp"]) / 2)
         self.rng = np.random.Generator(np.random.PCG64(0))
-        np.fft.fft(np.zeros((256, 256), dtype=np.complex128), norm="ortho")
+        np.fft.fft(
+            np.zeros((SYMBOLS_PER_BATCH, FFT_SIZE), dtype=np.complex128), norm="ortho"
+        )
 
     def bits(self) -> np.ndarray:
-        return self.rng.integers(0, 2, size=(256, 672), dtype=np.uint8)
+        return self.rng.integers(
+            0, 2, size=(SYMBOLS_PER_BATCH, BITS_PER_OFDM_SYMBOL), dtype=np.uint8
+        )
 
     def taps(self) -> np.ndarray:
         if self.config["channel"] == "awgn":
-            return np.ones((256, 1), dtype=np.complex128)
-        draws = self.rng.standard_normal((256, 8, 2))
-        return (draws[..., 0] + 1j * draws[..., 1]) * self.tap_scale
+            return np.ones((SYMBOLS_PER_BATCH, 1), dtype=np.complex128)
+        draws = self.rng.standard_normal((SYMBOLS_PER_BATCH, len(self.tap_scales), 2))
+        return (draws[..., 0] + 1j * draws[..., 1]) * self.tap_scales
 
     def grid(self, values: np.ndarray) -> np.ndarray:
-        output = np.zeros((*values.shape[:-1], 256), dtype=np.complex128)
-        output[..., self.data] = values
-        output[..., self.pilots] = self.config["pilots"]
+        output = np.zeros((*values.shape[:-1], FFT_SIZE), dtype=np.complex128)
+        output[..., self.data_indices] = values
+        output[..., self.pilot_indices] = self.pilot_values
         return output
 
     def estimate(self, spectrum: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        pilots = spectrum[..., self.pilots] / np.array(self.config["pilots"])
+        pilots = spectrum[..., self.pilot_indices] / self.pilot_values
         return pilots, pilots[..., self.left] + self.fraction * (
             pilots[..., self.right] - pilots[..., self.left]
         )
@@ -121,8 +141,8 @@ class Worker:
         draws = self.rng.standard_normal((*values.shape, 2))
         return values + (draws[..., 0] + 1j * draws[..., 1]) * math.sqrt(n0 / 2)
 
-    def decide(self, values: np.ndarray, original: np.ndarray) -> dict:
-        errors = demap(values) != original
+    def decide(self, values: np.ndarray, original_bits: np.ndarray) -> dict:
+        errors = demap(values) != original_bits
         return {
             "n_errors": int(np.count_nonzero(errors)),
             "n_symbols_with_errors": int(np.count_nonzero(np.any(errors, axis=-1))),
@@ -130,22 +150,24 @@ class Worker:
 
     def batch(self, seed: int, point: float) -> dict:
         self.rng = np.random.Generator(np.random.PCG64(seed))
-        original = self.bits()
-        spectrum = self.grid(map_qam(original))
-        values = np.fft.ifft(spectrum, norm="ortho")
-        prefixed = np.concatenate((values[..., -32:], values), axis=-1)
-        taps = self.taps()
-        received = self.awgn(
-            convolve(prefixed, taps), noise_variance(point, self.config)
+        original_bits = self.bits()
+        transmit_grid = self.grid(map_qam(original_bits))
+        transmit_time = np.fft.ifft(transmit_grid, norm="ortho")
+        prefixed = np.concatenate(
+            (transmit_time[..., -CP_LENGTH:], transmit_time), axis=-1
         )
-        rx = np.fft.fft(received[..., 32:288], norm="ortho")
+        channel_taps = self.taps()
+        channel_output = convolve(prefixed, channel_taps)
+        noisy = self.awgn(channel_output, noise_variance(point, self.config))
+        received_grid = np.fft.fft(noisy[..., CP_LENGTH:SAMPLES_WITH_CP], norm="ortho")
+        # H is the unscaled tap DFT: Y = H*X still holds for unitary signal FFTs.
         estimates = (
-            np.fft.fft(taps, n=256)[..., self.data]
+            np.fft.fft(channel_taps, n=FFT_SIZE)[..., self.data_indices]
             if self.config["csi"] == "perfect"
-            else self.estimate(rx)[1]
+            else self.estimate(received_grid)[1]
         )
-        values, zeros = equalize(rx[..., self.data], estimates)
-        counts = self.decide(values, original)
+        equalized, zeros = equalize(received_grid[..., self.data_indices], estimates)
+        counts = self.decide(equalized, original_bits)
         counts.update(
             n_batches=1,
             zf_zero_count=zeros,
@@ -155,41 +177,43 @@ class Worker:
 
     def stages(self, seed: int, point: float) -> dict:
         self.rng = np.random.Generator(np.random.PCG64(seed))
-        original = self.bits()
-        qam = map_qam(original)
-        spectrum = self.grid(qam)
+        original_bits = self.bits()
+        qam_symbols = map_qam(original_bits)
+        spectrum = self.grid(qam_symbols)
         values = np.fft.ifft(spectrum, norm="ortho")
-        prefixed = np.concatenate((values[..., -32:], values), axis=-1)
+        prefixed = np.concatenate((values[..., -CP_LENGTH:], values), axis=-1)
         taps = self.taps()
         received = convolve(prefixed, taps)
         n0 = noise_variance(point, self.config)
         noisy = self.awgn(received, n0)
-        stripped = noisy[..., 32:288].copy()
-        rx = np.fft.fft(stripped, norm="ortho")
-        estimates = self.estimate(rx)[1]
-        eq = equalize(rx[..., self.data], estimates)[0]
+        stripped = noisy[..., CP_LENGTH:SAMPLES_WITH_CP].copy()
+        received_grid = np.fft.fft(stripped, norm="ortho")
+        estimates = self.estimate(received_grid)[1]
+        equalized = equalize(received_grid[..., self.data_indices], estimates)[0]
         actions = {
             "bits": self.bits,
-            "qam_map": lambda: map_qam(original),
-            "grid": lambda: self.grid(qam),
+            "qam_map": lambda: map_qam(original_bits),
+            "grid": lambda: self.grid(qam_symbols),
             "ifft": lambda: np.fft.ifft(spectrum, norm="ortho"),
-            "cp_add": lambda: np.concatenate((values[..., -32:], values), axis=-1),
-            "channel_conv": lambda: convolve(prefixed, self.taps()),
+            "cp_add": lambda: np.concatenate(
+                (values[..., -CP_LENGTH:], values), axis=-1
+            ),
+            "channel_conv": lambda: convolve(prefixed, taps),
             "awgn": lambda: self.awgn(received, n0),
-            "cp_remove": lambda: noisy[..., 32:288].copy(),
+            "cp_remove": lambda: noisy[..., CP_LENGTH:SAMPLES_WITH_CP].copy(),
             "fft": lambda: np.fft.fft(stripped, norm="ortho"),
-            "chan_est": lambda: self.estimate(rx),
-            "zf": lambda: equalize(rx[..., self.data], estimates),
-            "demap_count": lambda: self.decide(eq, original),
-            "e2e": lambda: self.batch(seed, point),
+            "chan_est": lambda: self.estimate(received_grid),
+            "zf": lambda: equalize(received_grid[..., self.data_indices], estimates),
+            "demap_count": lambda: self.decide(equalized, original_bits),
+            "e2e": lambda: self.batch(batch_seed(seed, 0, repetition), point),
         }
         timings = {}
         for name, action in actions.items():
             samples = []
-            for _ in range(self.config["stages"]["repetitions"]):
+            for repetition in range(self.config["stages"]["repetitions"]):
                 start = time.perf_counter_ns()
                 action()
-                samples.append((time.perf_counter_ns() - start) / 256)
+                samples.append((time.perf_counter_ns() - start) / SYMBOLS_PER_BATCH)
             timings[name] = statistics.median(samples)
         return timings
 
@@ -202,8 +226,8 @@ class Worker:
             spectrum = self.grid(decode(inputs["symbols"]))
             return {
                 "spectrum": encode(spectrum),
-                "data": encode(spectrum[self.data]),
-                "pilots": encode(spectrum[self.pilots]),
+                "data": encode(spectrum[self.data_indices]),
+                "pilots": encode(spectrum[self.pilot_indices]),
             }
         if case_id in ("transforms", "fft_impulse"):
             values = decode(inputs["values"])
@@ -213,13 +237,16 @@ class Worker:
             }
         if case_id == "cp":
             values = decode(inputs["values"])
-            prefixed = np.concatenate((values[-32:], values))
-            return {"with_cp": encode(prefixed), "without_cp": encode(prefixed[32:288])}
+            prefixed = np.concatenate((values[-CP_LENGTH:], values))
+            return {
+                "with_cp": encode(prefixed),
+                "without_cp": encode(prefixed[CP_LENGTH:SAMPLES_WITH_CP]),
+            }
         if case_id == "channel":
             taps = decode(inputs["taps"])
             return {
                 "convolved": encode(convolve(decode(inputs["values"]), taps)),
-                "response": encode(np.fft.fft(taps, n=256)),
+                "response": encode(np.fft.fft(taps, n=FFT_SIZE)),
             }
         if case_id == "estimation":
             pilots, estimates = self.estimate(decode(inputs["spectrum"]))
@@ -242,29 +269,32 @@ class Worker:
             }
         if case_id != "end_to_end":
             raise ValueError(f"Unknown golden case: {case_id}")
-        original = np.array(inputs["bits"])
+        original_bits = np.array(inputs["bits"])
         taps = decode(inputs["taps"])
-        spectrum = self.grid(map_qam(original))
+        spectrum = self.grid(map_qam(original_bits))
         values = np.fft.ifft(spectrum, norm="ortho")
-        prefixed = np.concatenate((values[-32:], values))
+        prefixed = np.concatenate((values[-CP_LENGTH:], values))
         received = convolve(prefixed, taps) + decode(inputs["noise"])
-        rx = np.fft.fft(received[32:288], norm="ortho")
-        pilots, estimates = self.estimate(rx)
-        eq, zeros = equalize(rx[self.data], estimates)
-        perfect = equalize(rx[self.data], np.fft.fft(taps, n=256)[self.data])[0]
-        bits = demap(eq)
+        received_grid = np.fft.fft(received[CP_LENGTH:SAMPLES_WITH_CP], norm="ortho")
+        pilots, estimates = self.estimate(received_grid)
+        equalized, zeros = equalize(received_grid[self.data_indices], estimates)
+        perfect = equalize(
+            received_grid[self.data_indices],
+            np.fft.fft(taps, n=FFT_SIZE)[self.data_indices],
+        )[0]
+        bits = demap(equalized)
         return {
             "spectrum": encode(spectrum),
             "time": encode(values),
             "with_cp": encode(prefixed),
             "received": encode(received),
-            "received_fft": encode(rx),
+            "received_fft": encode(received_grid),
             "pilot_estimates": encode(pilots),
             "data_estimates": encode(estimates),
-            "equalized": encode(eq),
+            "equalized": encode(equalized),
             "bits": bits.tolist(),
             "perfect_bits": demap(perfect).tolist(),
-            "n_errors": int(np.count_nonzero(bits != original)),
+            "n_errors": int(np.count_nonzero(bits != original_bits)),
             "zf_zero_count": zeros,
         }
 
@@ -375,7 +405,7 @@ def measure(
                 **base,
                 **counts,
                 "ebn0_db": point,
-                "n_symbols": counts["n_batches"] * 256,
+                "n_symbols": counts["n_batches"] * SYMBOLS_PER_BATCH,
                 "n_bits": counts["n_batches"] * BATCH_BITS,
                 "status": status,
                 "setup_s": setup_s,

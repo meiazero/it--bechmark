@@ -1,9 +1,11 @@
-# Session state: M4 complete
+# Session state: M4 complete; lecture refactor
 
-Updated September 30, 2026. Work paused at the user's request for a system restart.
-The next milestone is **M5 Julia**; no Julia implementation was started.
+Updated September 30, 2026. The current request revises the plan and refactors
+the existing C++/Python/Rust code for an optimization and telecommunications
+lecture. The next implementation milestone remains **M5 Julia**.
+`LECTURE.md` contains the executable teaching route and derivations.
 
-## Completed and committed on main
+## Completed milestone commits
 
 | Milestone | Commit | Verified outcome |
 |---|---|---|
@@ -21,6 +23,17 @@ formatting and Clippy with `-D warnings` passed. Python and shared E2E test file
 passed Ruff 0.16.9 formatting/lint checks using an already cached executable.
 No statistical simulator/theory validation, profiler round, calibration, complete
 benchmark, harness, or report has been performed yet.
+
+## Lecture refactor validation
+
+`make doctor`, `make golden`, and all 24 tests passed. Ruff and Rust formatting
+checks passed; Clippy passed with warnings denied. `results/refactor/verify.py`
+compares 30 retained CLI artifacts against the pre-refactor snapshot: all numeric
+outputs and metadata match exactly when timing fields are excluded. Evidence is
+local in `results/refactor/comparison.json`; acceptance remains reproducible with
+`make test`. The frozen contract and lockfiles are unchanged. Independent read-only explorer
+review found no blocker; the IT++ plan lifetime distinction is recorded for M8.
+Changes remain uncommitted on the observed `master` branch.
 
 ## Evidence and implementation details
 
@@ -44,16 +57,19 @@ benchmark, harness, or report has been performed yet.
 M4 review identified that `channel_conv` in C++, Python, and Rust generates fresh
 taps inside the timed stage instead of using a retained pregenerated tap batch.
 The review classified this as nonblocking for Phase 1. It is recorded in all
-three `NOTES.md` files and must be resolved consistently across four languages
-in M7 before any performance claim. Symbol-sized allocations in C++ and Rust
+three `NOTES.md` files and is resolved in the three existing implementations
+by the current lecture refactor before any performance claim. M7 will recheck
+Julia and the harness. Symbol-sized allocations in C++ and Rust
 are deliberate initial ceilings; optimization requires the one M8 profiler round.
 
-## Resume after reboot
+## Resume implementation milestones
 
 Read `AGENTS.md`, `PLANO_BENCHMARK_OFDM.md`, and this file; verify the current Git
-state before changing anything. The user's original authorization is to continue
-M2 through M10 using the plan's implement/accept/fresh-review/fix/commit loop.
-The current pause was explicitly requested for a restart.
+state before changing anything. The current task is the lecture refactor,
+not completion of the remaining
+milestones. Confirm the active request before resuming M5–M10. The observed
+branch is `master`; milestone instructions request `main`, so establish the
+intended branch before making future milestone commits.
 
 1. In a noninteractive Bash shell, activate the pinned toolchain:
    `eval "$(mise env -s bash)"`.

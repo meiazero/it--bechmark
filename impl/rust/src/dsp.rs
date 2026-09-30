@@ -6,6 +6,14 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Instant;
 
+pub const FFT_SIZE: usize = 256;
+pub const CP_LENGTH: usize = 32;
+pub const SAMPLES_WITH_CP: usize = FFT_SIZE + CP_LENGTH;
+pub const SYMBOLS_PER_BATCH: usize = 256;
+pub const BITS_PER_OFDM_SYMBOL: usize = 672;
+pub const BITS_PER_BATCH: u64 = (SYMBOLS_PER_BATCH * BITS_PER_OFDM_SYMBOL) as u64;
+pub const SYMBOL_ENERGY: f64 = 216.;
+
 pub type Values = Vec<Complex>;
 pub fn splitmix(mut value: u64) -> u64 {
     value = value.wrapping_add(0x9e3779b97f4a7c15);
@@ -62,10 +70,14 @@ pub fn demap(values: &[Complex]) -> Vec<u8> {
         .collect()
 }
 pub fn add_cp(values: &[Complex]) -> Values {
-    values[224..].iter().chain(values.iter()).copied().collect()
+    values[FFT_SIZE - CP_LENGTH..]
+        .iter()
+        .chain(values.iter())
+        .copied()
+        .collect()
 }
 pub fn remove_cp(values: &[Complex]) -> Values {
-    values[32..288].to_vec()
+    values[CP_LENGTH..SAMPLES_WITH_CP].to_vec()
 }
 pub fn convolve(values: &[Complex], taps: &[Complex]) -> Values {
     (0..values.len())
@@ -79,14 +91,15 @@ pub fn convolve(values: &[Complex], taps: &[Complex]) -> Values {
         .collect()
 }
 pub fn response(taps: &[Complex]) -> Values {
-    (0..256)
+    // Channel gains use the unscaled tap DFT, unlike the unitary signal FFTs.
+    (0..FFT_SIZE)
         .map(|k| {
             taps.iter()
                 .enumerate()
                 .map(|(l, tap)| {
                     *tap * Complex::from_polar(
                         1.,
-                        -2. * std::f64::consts::PI * k as f64 * l as f64 / 256.,
+                        -2. * std::f64::consts::PI * k as f64 * l as f64 / FFT_SIZE as f64,
                     )
                 })
                 .sum()
@@ -94,6 +107,7 @@ pub fn response(taps: &[Complex]) -> Values {
         .collect()
 }
 pub fn equalize(data: &[Complex], estimates: &[Complex]) -> (Values, u64) {
+    // Exact zeros are counted; no clipping changes the ZF noise enhancement.
     let zeros = estimates
         .iter()
         .filter(|&&x| x == Complex::new(0., 0.))
@@ -112,7 +126,7 @@ pub fn equalize(data: &[Complex], estimates: &[Complex]) -> (Values, u64) {
     (values, zeros)
 }
 pub fn noise_variance(point: f64) -> Result<f64, String> {
-    let value = 216. / (672. * 10f64.powf(point / 10.));
+    let value = SYMBOL_ENERGY / (BITS_PER_OFDM_SYMBOL as f64 * 10f64.powf(point / 10.));
     if !value.is_finite() || value <= 0. {
         return Err("Eb/N0 exceeds the finite noise range".into());
     }
@@ -120,13 +134,13 @@ pub fn noise_variance(point: f64) -> Result<f64, String> {
 }
 
 pub struct Config {
-    pub data: Vec<usize>,
-    pub pilots: Vec<usize>,
+    pub data_indices: Vec<usize>,
+    pub pilot_indices: Vec<usize>,
     pub pilot_values: Vec<f64>,
-    pub tap_scale: Vec<f64>,
+    pub tap_scales: Vec<f64>,
     pub interpolation: Vec<(usize, usize, f64)>,
-    pub awgn: bool,
-    pub perfect: bool,
+    pub awgn_channel: bool,
+    pub perfect_csi: bool,
     pub repetitions: u64,
 }
 impl Config {
@@ -144,23 +158,27 @@ impl Config {
             .map(|x| x.as_i64().unwrap())
             .collect();
         Self {
-            data: data_bins
+            data_indices: data_bins
                 .iter()
-                .map(|x| x.rem_euclid(256) as usize)
+                .map(|x| x.rem_euclid(FFT_SIZE as i64) as usize)
                 .collect(),
-            pilots: bins.iter().map(|x| x.rem_euclid(256) as usize).collect(),
+            pilot_indices: bins
+                .iter()
+                .map(|x| x.rem_euclid(FFT_SIZE as i64) as usize)
+                .collect(),
             pilot_values: value["pilots"]
                 .as_array()
                 .unwrap()
                 .iter()
                 .map(|x| x.as_f64().unwrap())
                 .collect(),
-            tap_scale: value["pdp"]
+            tap_scales: value["pdp"]
                 .as_array()
                 .unwrap()
                 .iter()
                 .map(|x| (x.as_f64().unwrap() / 2.).sqrt())
                 .collect(),
+            // Physical bin spacing spans DC; wrapped FFT indices cannot define it.
             interpolation: data_bins
                 .iter()
                 .map(|&k| {
@@ -173,27 +191,27 @@ impl Config {
                     )
                 })
                 .collect(),
-            awgn: value["channel"] == "awgn",
-            perfect: value["csi"] == "perfect",
+            awgn_channel: value["channel"] == "awgn",
+            perfect_csi: value["csi"] == "perfect",
             repetitions: value["stages"]["repetitions"].as_u64().unwrap(),
         }
     }
     pub fn grid(&self, data: &[Complex]) -> Values {
-        let mut output = vec![Complex::new(0., 0.); 256];
-        for (&index, &value) in self.data.iter().zip(data) {
+        let mut output = vec![Complex::new(0., 0.); FFT_SIZE];
+        for (&index, &value) in self.data_indices.iter().zip(data) {
             output[index] = value;
         }
-        for (&index, &value) in self.pilots.iter().zip(&self.pilot_values) {
+        for (&index, &value) in self.pilot_indices.iter().zip(&self.pilot_values) {
             output[index] = Complex::new(value, 0.);
         }
         output
     }
     pub fn extract(&self, spectrum: &[Complex]) -> Values {
-        self.data.iter().map(|&i| spectrum[i]).collect()
+        self.data_indices.iter().map(|&i| spectrum[i]).collect()
     }
     pub fn estimate(&self, spectrum: &[Complex]) -> (Values, Values) {
         let pilots: Values = self
-            .pilots
+            .pilot_indices
             .iter()
             .zip(&self.pilot_values)
             .map(|(&i, &p)| spectrum[i] / p)
@@ -230,10 +248,10 @@ impl Counts {
         }
         Ok(())
     }
-    pub fn decide(values: &[Complex], original: &[u8]) -> Self {
+    pub fn decide(values: &[Complex], original_bits: &[u8]) -> Self {
         let errors = demap(values)
             .iter()
-            .zip(original)
+            .zip(original_bits)
             .filter(|(left, right)| left != right)
             .count() as u64;
         Self {
@@ -255,8 +273,8 @@ pub struct Worker {
 impl Worker {
     pub fn new(config: Arc<Config>) -> Self {
         let mut planner = FftPlanner::new();
-        let forward = planner.plan_fft_forward(256);
-        let inverse = planner.plan_fft_inverse(256);
+        let forward = planner.plan_fft_forward(FFT_SIZE);
+        let inverse = planner.plan_fft_inverse(FFT_SIZE);
         let size = forward
             .get_inplace_scratch_len()
             .max(inverse.get_inplace_scratch_len());
@@ -275,23 +293,24 @@ impl Worker {
         } else {
             &self.forward
         };
+        // rustfft leaves both transforms unscaled; the contract requires 1/sqrt(N).
         plan.process_with_scratch(&mut output, &mut self.scratch);
         for x in &mut output {
-            *x /= 16.;
+            *x /= (FFT_SIZE as f64).sqrt();
         }
         output
     }
     fn bits(&mut self) -> Vec<u8> {
-        (0..672)
+        (0..BITS_PER_OFDM_SYMBOL)
             .map(|_| u8::from(self.rng.random::<bool>()))
             .collect()
     }
     fn taps(&mut self) -> Values {
-        if self.config.awgn {
+        if self.config.awgn_channel {
             return vec![Complex::new(1., 0.)];
         }
         self.config
-            .tap_scale
+            .tap_scales
             .iter()
             .map(|&scale| {
                 let real: f64 = StandardNormal.sample(&mut self.rng);
@@ -314,23 +333,24 @@ impl Worker {
         self.rng = SmallRng::seed_from_u64(seed);
         let n0 = noise_variance(point).unwrap();
         let mut counts = Counts::default();
-        for _ in 0..256 {
-            let original = self.bits();
-            let spectrum = self.config.grid(&map_qam(&original));
-            let time = self.transform(&spectrum, true);
-            let prefixed = add_cp(&time);
-            let taps = self.taps();
-            let noisy = self.awgn(&convolve(&prefixed, &taps), n0);
-            let rx = self.transform(&remove_cp(&noisy), false);
-            let estimates = if self.config.perfect {
-                self.config.extract(&response(&taps))
+        for _ in 0..SYMBOLS_PER_BATCH {
+            let original_bits = self.bits();
+            let transmit_grid = self.config.grid(&map_qam(&original_bits));
+            let transmit_time = self.transform(&transmit_grid, true);
+            let prefixed = add_cp(&transmit_time);
+            let channel_taps = self.taps();
+            let channel_output = convolve(&prefixed, &channel_taps);
+            let noisy = self.awgn(&channel_output, n0);
+            let received_grid = self.transform(&remove_cp(&noisy), false);
+            let estimates = if self.config.perfect_csi {
+                self.config.extract(&response(&channel_taps))
             } else {
-                self.config.estimate(&rx).1
+                self.config.estimate(&received_grid).1
             };
-            let (eq, zeros) = equalize(&self.config.extract(&rx), &estimates);
-            let result = Counts::decide(&eq, &original);
-            counts.errors += result.errors;
-            counts.symbols_with_errors += result.symbols_with_errors;
+            let (equalized, zeros) = equalize(&self.config.extract(&received_grid), &estimates);
+            let symbol_counts = Counts::decide(&equalized, &original_bits);
+            counts.errors += symbol_counts.errors;
+            counts.symbols_with_errors += symbol_counts.symbols_with_errors;
             counts.zeros += zeros;
         }
         counts.batches = 1;
@@ -345,7 +365,7 @@ impl Worker {
                 let spectrum = self.config.grid(&decode(&input["symbols"]));
                 Ok(
                     json!({"spectrum":encode(&spectrum),"data":encode(&self.config.extract(&spectrum)),
-                    "pilots":encode(&self.config.pilots.iter().map(|&i|spectrum[i]).collect::<Values>())}),
+                    "pilots":encode(&self.config.pilot_indices.iter().map(|&i|spectrum[i]).collect::<Values>())}),
                 )
             }
             "transforms" | "fft_impulse" => {
@@ -369,8 +389,9 @@ impl Worker {
                 Ok(json!({"pilot_estimates":encode(&pilots),"data_estimates":encode(&estimates)}))
             }
             "zf" => {
-                let (eq, zeros) = equalize(&decode(&input["data"]), &decode(&input["estimates"]));
-                Ok(json!({"equalized":encode(&eq),"zf_zero_count":zeros}))
+                let (equalized, zeros) =
+                    equalize(&decode(&input["data"]), &decode(&input["estimates"]));
+                Ok(json!({"equalized":encode(&equalized),"zf_zero_count":zeros}))
             }
             "noise_seed" => Ok(json!({
                 "N0": input["ebn0_db"].as_array().unwrap().iter().map(|p|noise_variance(p.as_f64().unwrap()).unwrap()).collect::<Vec<_>>(),
@@ -378,9 +399,9 @@ impl Worker {
                 "batch_seeds": input["batch_seed_inputs"].as_array().unwrap().iter().map(|s|batch_seed(s[0].as_u64().unwrap(),s[1].as_u64().unwrap(),s[2].as_u64().unwrap())).collect::<Vec<_>>()
             })),
             "end_to_end" => {
-                let original = bits_from(&input["bits"]);
+                let original_bits = bits_from(&input["bits"]);
                 let taps = decode(&input["taps"]);
-                let spectrum = self.config.grid(&map_qam(&original));
+                let spectrum = self.config.grid(&map_qam(&original_bits));
                 let time = self.transform(&spectrum, true);
                 let cp = add_cp(&time);
                 let received: Values = convolve(&cp, &taps)
@@ -388,16 +409,16 @@ impl Worker {
                     .zip(decode(&input["noise"]))
                     .map(|(x, n)| x + n)
                     .collect();
-                let rx = self.transform(&remove_cp(&received), false);
-                let (pilots, estimates) = self.config.estimate(&rx);
-                let data = self.config.extract(&rx);
-                let (eq, zeros) = equalize(&data, &estimates);
+                let received_grid = self.transform(&remove_cp(&received), false);
+                let (pilots, estimates) = self.config.estimate(&received_grid);
+                let data = self.config.extract(&received_grid);
+                let (equalized, zeros) = equalize(&data, &estimates);
                 let perfect = equalize(&data, &self.config.extract(&response(&taps))).0;
-                let counts = Counts::decide(&eq, &original);
+                let counts = Counts::decide(&equalized, &original_bits);
                 Ok(
                     json!({"spectrum":encode(&spectrum),"time":encode(&time),"with_cp":encode(&cp),
-                    "received":encode(&received),"received_fft":encode(&rx),"pilot_estimates":encode(&pilots),
-                    "data_estimates":encode(&estimates),"equalized":encode(&eq),"bits":demap(&eq),
+                    "received":encode(&received),"received_fft":encode(&received_grid),"pilot_estimates":encode(&pilots),
+                    "data_estimates":encode(&estimates),"equalized":encode(&equalized),"bits":demap(&equalized),
                     "perfect_bits":demap(&perfect),"n_errors":counts.errors,"zf_zero_count":zeros}),
                 )
             }
@@ -407,32 +428,33 @@ impl Worker {
     pub fn stages(&mut self, seed: u64, point: f64) -> Value {
         self.rng = SmallRng::seed_from_u64(seed);
         let n0 = noise_variance(point).unwrap();
-        let mut originals = Vec::new();
-        let mut qam = Vec::new();
+        let mut original_bits = Vec::new();
+        let mut qam_symbols = Vec::new();
         let mut spectra = Vec::new();
         let mut times = Vec::new();
         let mut cps = Vec::new();
+        let mut channel_taps = Vec::new();
         let mut received = Vec::new();
         let mut noisy = Vec::new();
         let mut stripped = Vec::new();
-        let mut rx = Vec::new();
+        let mut received_grid = Vec::new();
         let mut estimates = Vec::new();
-        let mut eq = Vec::new();
-        for _ in 0..256 {
-            originals.push(self.bits());
-            qam.push(map_qam(originals.last().unwrap()));
-            spectra.push(self.config.grid(qam.last().unwrap()));
+        let mut equalized = Vec::new();
+        for _ in 0..SYMBOLS_PER_BATCH {
+            original_bits.push(self.bits());
+            qam_symbols.push(map_qam(original_bits.last().unwrap()));
+            spectra.push(self.config.grid(qam_symbols.last().unwrap()));
             times.push(self.transform(spectra.last().unwrap(), true));
             cps.push(add_cp(times.last().unwrap()));
-            let taps = self.taps();
-            received.push(convolve(cps.last().unwrap(), &taps));
+            channel_taps.push(self.taps());
+            received.push(convolve(cps.last().unwrap(), channel_taps.last().unwrap()));
             noisy.push(self.awgn(received.last().unwrap(), n0));
             stripped.push(remove_cp(noisy.last().unwrap()));
-            rx.push(self.transform(stripped.last().unwrap(), false));
-            estimates.push(self.config.estimate(rx.last().unwrap()).1);
-            eq.push(
+            received_grid.push(self.transform(stripped.last().unwrap(), false));
+            estimates.push(self.config.estimate(received_grid.last().unwrap()).1);
+            equalized.push(
                 equalize(
-                    &self.config.extract(rx.last().unwrap()),
+                    &self.config.extract(received_grid.last().unwrap()),
                     estimates.last().unwrap(),
                 )
                 .0,
@@ -460,16 +482,16 @@ impl Worker {
                 if name == "e2e" {
                     std::hint::black_box(self.batch(batch_seed(seed, 0, r), point));
                 } else {
-                    for i in 0..256 {
+                    for i in 0..SYMBOLS_PER_BATCH {
                         match name {
                             "bits" => {
                                 std::hint::black_box(self.bits());
                             }
                             "qam_map" => {
-                                std::hint::black_box(map_qam(&originals[i]));
+                                std::hint::black_box(map_qam(&original_bits[i]));
                             }
                             "grid" => {
-                                std::hint::black_box(self.config.grid(&qam[i]));
+                                std::hint::black_box(self.config.grid(&qam_symbols[i]));
                             }
                             "ifft" => {
                                 std::hint::black_box(self.transform(&spectra[i], true));
@@ -478,8 +500,7 @@ impl Worker {
                                 std::hint::black_box(add_cp(&times[i]));
                             }
                             "channel_conv" => {
-                                let h = self.taps();
-                                std::hint::black_box(convolve(&cps[i], &h));
+                                std::hint::black_box(convolve(&cps[i], &channel_taps[i]));
                             }
                             "awgn" => {
                                 std::hint::black_box(self.awgn(&received[i], n0));
@@ -491,22 +512,25 @@ impl Worker {
                                 std::hint::black_box(self.transform(&stripped[i], false));
                             }
                             "chan_est" => {
-                                std::hint::black_box(self.config.estimate(&rx[i]));
+                                std::hint::black_box(self.config.estimate(&received_grid[i]));
                             }
                             "zf" => {
                                 std::hint::black_box(equalize(
-                                    &self.config.extract(&rx[i]),
+                                    &self.config.extract(&received_grid[i]),
                                     &estimates[i],
                                 ));
                             }
                             "demap_count" => {
-                                std::hint::black_box(Counts::decide(&eq[i], &originals[i]));
+                                std::hint::black_box(Counts::decide(
+                                    &equalized[i],
+                                    &original_bits[i],
+                                ));
                             }
                             _ => unreachable!(),
                         }
                     }
                 }
-                samples.push(start.elapsed().as_secs_f64() * 1e9 / 256.);
+                samples.push(start.elapsed().as_secs_f64() * 1e9 / SYMBOLS_PER_BATCH as f64);
             }
             samples.sort_by(f64::total_cmp);
             output[name] =

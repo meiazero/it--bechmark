@@ -49,3 +49,31 @@ warnings denied passed after the fixed-array chunk change.
 Symbol-sized DSP allocations are the deliberate initial ceiling named by the
 source's `ponytail:` comment. Only the M8 profiler round can justify replacing
 measured hotspots. No speed claim follows from E2E timings.
+
+## Lecture refactor — September 30, 2026
+
+Frozen dimensions and energy now have named constants. The pipeline and numeric
+configuration distinguish transmit/receive signals, FFT indices, pilot values,
+and tap standard deviations. Geometry was already prepared outside the work loop;
+that structure and the safe rustfft scratch interface are retained. SmallRng and
+StandardNormal draw order are unchanged. Symbol-sized temporary vectors remain;
+no dependency, contract value, schema, or profiler round was added.
+
+The pending stage defect is resolved: the fixture batch retains its channel taps
+and `channel_conv` times only direct convolution. Additional retained fixture
+storage buys stage isolation and is outside primary perf mode. The true channel
+DFT and unitary signal FFT conventions are explained beside their implementations.
+This refactor makes no measured speedup claim.
+
+### Refactor acceptance and independent review
+
+`make doctor`, `make golden`, and `make test` passed (24 tests). All 30 retained
+CLI artifacts match their pre-refactor numerical outputs and metadata exactly
+when setup/warmup/work and stage timing fields are excluded. The local evidence
+is `results/refactor/comparison.json`; `results/refactor/verify.py` regenerates
+that comparison. E2E now also checks finite, positive isolated stage durations
+and finite, nonnegative phase durations. No timing result proves a speedup.
+
+An independent read-only explorer review found no blocker. Rust formatting and
+Clippy with warnings denied passed; Python and shared E2E Ruff checks passed.
+The frozen contract and all lockfiles remain byte-unchanged.

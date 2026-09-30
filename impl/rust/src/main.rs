@@ -15,7 +15,7 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, mpsc};
 use std::time::Instant;
 
-const BATCH_BITS: u64 = 256 * 672;
+const BATCH_BITS: u64 = dsp::BITS_PER_BATCH;
 thread_local! { static WORKER: RefCell<Option<Worker>> = const { RefCell::new(None) }; }
 
 // serde handles JSON syntax; this visitor adds the contract's duplicate-key
@@ -362,7 +362,7 @@ fn execute(args: Arguments, setup_start: Instant) -> Result<(), String> {
                 .map(|w| w.stages(batch_seed(master, point_index as u64, 0), point));
             let work_s = start.elapsed().as_secs_f64();
             let mut record = base.clone();
-            for (name,value) in json!({"ebn0_db":point,"n_batches":counts.batches,"n_symbols":counts.batches*256,
+            for (name,value) in json!({"ebn0_db":point,"n_batches":counts.batches,"n_symbols":counts.batches * dsp::SYMBOLS_PER_BATCH as u64,
                 "n_bits":counts.batches*BATCH_BITS,"n_errors":counts.errors,"sum_batch_errors_sq":counts.squares,
                 "n_symbols_with_errors":counts.symbols_with_errors,"zf_zero_count":counts.zeros,"status":status,
                 "setup_s":setup_s,"warmup_s":warmup_s,"work_s":work_s}).as_object().unwrap(){record[name]=value.clone();}

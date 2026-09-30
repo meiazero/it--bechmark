@@ -46,7 +46,8 @@ diagnostic channels, and the complete stage output. Artifacts are retained under
 
 The M4 independent review identified a shared stage issue: `channel_conv` draws
 new taps inside the timed repetition instead of using a pregenerated tap batch.
-M7 must resolve this consistently across languages before performance reporting.
+This historical finding is resolved by the lecture refactor below.
+M7 will recheck the completed implementations before performance reporting.
 
 Symbol-sized vectors allocate inside the batch; this deliberate initial ceiling
 is recorded in the `ponytail:` comment. M8 may optimize only profiler-supported
@@ -209,3 +210,38 @@ mise untrust mise.toml
 ```
 
 No system package, governor, turbo, service, or persistent PATH setting was changed.
+
+## Lecture refactor — September 30, 2026
+
+The user requested a readable academic treatment of the existing implementations.
+`DspConfig` now converts the validated JSON to numeric geometry during setup: FFT
+indices, pilot values, interpolation brackets/weights, and tap standard deviations.
+The symbol loop no longer parses JSON, searches fixed pilot bins, or recalculates
+tap scales. This brings its setup/work separation in line with Python and Rust;
+no profiler round or speedup measurement was performed. A small retained geometry
+allocation replaces repeated invariant work. Symbol-sized temporary buffers remain.
+
+The OFDM pipeline now names transmit/receive signals explicitly and uses constants
+for the frozen dimensions. Comments explain unitary FFT scaling and the unscaled
+channel DFT. The pending stage defect is resolved: `channel_conv` reuses retained
+taps and excludes their RNG cost. Tap generation remains inside end-to-end work.
+No algorithm, draw order, contract value, schema, or dependency changed.
+
+### Refactor acceptance and independent review
+
+`make doctor`, `make golden`, and `make test` passed (24 tests). All 30 retained
+CLI artifacts match their pre-refactor numerical outputs and metadata exactly
+when setup/warmup/work and stage timing fields are excluded. The local evidence
+is `results/refactor/comparison.json`; `results/refactor/verify.py` regenerates
+that comparison. E2E now also checks finite, positive isolated stage durations
+and finite, nonnegative phase durations. No timing result proves a speedup.
+
+An independent read-only explorer review found no blocker. Rust formatting and
+Clippy with warnings denied passed; Python and shared E2E Ruff checks passed.
+The frozen contract and all lockfiles remain byte-unchanged.
+
+The review noted a backend lifetime distinction: C++ calls the IT++ FFT function
+interface and pre-exercises both directions during setup; Rust retains explicit
+plan and scratch objects. M0 verifies FFTW flags and scaling, not plan reuse or
+lifetime. M8 should observe that behavior before interpreting backend overhead.
+No unverified claim about an internal IT++ cache is made.

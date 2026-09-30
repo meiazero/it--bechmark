@@ -2,6 +2,7 @@
 
 import copy
 import json
+import math
 import subprocess
 import unittest
 
@@ -131,6 +132,13 @@ class ImplementationChecks(unittest.TestCase):
             [{k: fixed[0][0][k] for k in counters}] * 2,
         )
         stages = run(path, "stages", label="stages")
+        for duration in stages[0]["stage_ns_per_symbol"].values():
+            self.assertTrue(math.isfinite(duration))
+            self.assertGreater(duration, 0)
+        for record in (*runs[0], *fixed[0], *stages):
+            for phase in ("setup_s", "warmup_s", "work_s"):
+                self.assertTrue(math.isfinite(record[phase]))
+                self.assertGreaterEqual(record[phase], 0)
         self.assertEqual(
             set(stages[0]["stage_ns_per_symbol"]),
             {

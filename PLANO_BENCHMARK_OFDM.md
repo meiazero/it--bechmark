@@ -6,6 +6,28 @@ Construir um simulador OFDM ponto a ponto reproduzível para comparar a implemen
 
 Princípio de justiça: **mesmo algoritmo, mesma carga, mesmo contrato numérico, mesmas regras de otimização, mesmo ambiente medido**. Tudo o que difere entre linguagens (RNG, backend FFT, runtime) é registrado e isolado por medição de estágios, nunca escondido.
 
+## Uso como lecture: otimização, trade-offs e telecomunicações
+
+A revisão de 2026-09-30 prepara o código já entregue em M0–M4 para uma lecture.
+Nesta revisão, o escopo é C++/IT++, Python/NumPy, Rust e este plano; M5–M10
+continuam pendentes. A versão legível precisa manter as mesmas contagens para
+cada semente e os mesmos vetores dourados, com evidência anterior/posterior.
+O roteiro executável e as derivações estão em `LECTURE.md`.
+
+| Bloco | Pergunta que a lecture responde | Evidência prática |
+|---|---|---|
+| Modelo OFDM | Por que o CP transforma a convolução em ganho por subportadora? | golden de CP/canal, Parseval e resposta `H[k]` |
+| Receptor | O que LS, interpolação e ZF preservam ou amplificam? | golden de estimação, gap no DC, caso `Ĥ = 0` |
+| Custo computacional | Qual trabalho é invariável e qual cresce com lote/símbolo? | geometria preparada no setup, convolução direta, FFT de biblioteca |
+| Trade-offs | Como lote vetorizado, buffers por símbolo e processos trocam memória por trabalho? | leitura da mesma cadeia nas três versões; medição completa somente em M8–M9 |
+| Inferência | O que correção numérica e uma medição curta permitem concluir? | golden/E2E, limites da parada adaptativa, diferença entre compatibilidade e equivalência |
+
+Separar três tipos de afirmação: **derivação** do modelo, **verificação** por
+artefato e **medição** sob protocolo. Remover consultas JSON e geometria
+invariável do laço aproxima C++ da preparação já feita por Python e Rust;
+esta revisão não estima speedup. A única rodada de profiler por linguagem
+continua reservada ao M8, após as quatro versões funcionarem.
+
 ## Regras para o agente implementador (Codex)
 
 1. O diretório `contract/` é a fonte da verdade. Não altere valores do contrato; se algo for impossível de cumprir, pare e reporte com evidência.
@@ -23,7 +45,7 @@ Princípio de justiça: **mesmo algoritmo, mesma carga, mesmo contrato numérico
 Fora do escopo: FEC, sincronização, SDR/RF, GPU, precisão `Float32`, comparação de compiladores, tuning de backend FFT como objetivo próprio.
 Extensões opcionais, sempre em trilha separada e rotulada: 64-QAM, Numba/JAX, Python free-threaded, energia via RAPL.
 
-**MMSE removido do escopo:** em OFDM SISO com decisão abrupta por subportadora, o MMSE não enviesado coincide com o ZF e o MMSE enviesado piora 16-QAM (encolhe a amplitude antes do fatiador). Não acrescenta informação ao benchmark.
+**MMSE fora da trilha principal:** no modelo escalar SISO com energia unitária, o coeficiente MMSE é `H* / (|H|² + N0)`. Seu ganho sobre o símbolo é `a = |H|²/(|H|² + N0)`. Para `H ≠ 0`, remover esse ganho produz ZF. Aplicar o coeficiente enviesado aos limiares fixos de 16-QAM muda a decisão por encolher a amplitude; isso não fundamenta uma afirmação universal de BER pior. Comparar políticas de receptor seria outro experimento. A trilha principal preserva ZF para comparar implementações do mesmo algoritmo.
 
 ## Ambiente e versões
 
@@ -228,7 +250,7 @@ Orquestrador em Python (`bench/`, ambiente de `tools/`), fixado na CPU 0.
 ### Modos de medição
 
 - **`perf` (primário):** carga fixa em `EbN0 = 10 dB`, `n_batches` calibrado no M8 para que C++ single-thread leve ≥ 5 s, depois congelado; até lá fica `null` no perfil e a suíte `smoke` usa uma config derivada (ver "Marcos"). Sem timers internos além de `t0`/`t1` ao redor do trabalho. Throughput = `n_batches · 256 · 672 / work_s`.
-- **`stages`:** cada estágio isolado sobre entradas pré-geradas de um lote, R repetições, mediana em ns por símbolo OFDM. Estágios: `bits`, `qam_map`, `grid`, `ifft`, `cp_add`, `channel_conv`, `awgn`, `cp_remove`, `fft`, `chan_est`, `zf`, `demap_count`. Reportar a soma dos estágios contra o `e2e`; a diferença é glue/alocação.
+- **`stages`:** cada estágio isolado sobre entradas pré-geradas de um lote, R repetições, mediana em ns por símbolo OFDM. `channel_conv` recebe taps retidos, sem RNG dentro do timer. `bits` e `awgn` incluem seus sorteios por definição; a geração de taps está no `e2e` e no profiler. O `e2e` usa semente distinta e reprodutível em cada repetição, igual nas regras das linguagens. Estágios: `bits`, `qam_map`, `grid`, `ifft`, `cp_add`, `channel_conv`, `awgn`, `cp_remove`, `fft`, `chan_est`, `zf`, `demap_count`. Reportar a soma dos estágios contra o `e2e`; a diferença é um resíduo descritivo: inclui geração de taps, glue, alocação e efeitos de cache/temporização; a soma de medianas isoladas não decompõe exatamente a mediana ponta a ponta.
 - **`ber`:** curva de qualidade com critério de parada. Não é medição de desempenho.
 
 ### Fases do processo
@@ -268,9 +290,22 @@ Dados brutos nunca são descartados; a agregação lê de `results/<run_id>/raw/
 ## Análise estatística
 
 - **Desempenho:** mediana dos 10 `work_s` por configuração, IC 95% bootstrap (10.000 reamostras, semente fixa). Speedup em relação ao C++ com IC bootstrap da razão das medianas. Reportar também min e IQR.
-- **BER:** lotes são i.i.d. (canal independente por símbolo), mas os erros dentro de um símbolo são correlacionados. IC 95% pela média de lotes (`t` com `n_batches − 1` g.l.), calculado de `n_errors` e `sum_batch_errors_sq`. Nunca usar IC binomial por bit.
-- **Zero erros:** reportar `BER < 1 − 0,05^(1/n_symbols)` (limite de 95% sobre a probabilidade de um símbolo ter algum erro, que limita a BER). Nunca BER = 0.
-- **Equivalência entre linguagens:** para cada ponto e cada par de linguagens, teste z de Welch sobre as médias de lotes, α = 0,01 com Bonferroni (6 pares × número de pontos).
+- **BER:** sob carga fixa, lotes são i.i.d. (canal independente por símbolo), mas os erros dentro de um símbolo são correlacionados. IC 95% pela média de lotes (`t` com `n_batches − 1` g.l.), calculado de `n_errors` e `sum_batch_errors_sq`. Nunca usar IC binomial por bit.
+- **Zero erros:** sob tamanho fixo, reportar `BER < 1 − 0,05^(1/n_symbols)` (limite de 95% sobre a probabilidade de um símbolo ter algum erro, que limita a BER). Nunca BER = 0.
+- **Comparação entre linguagens:** para cada ponto e cada par de linguagens, teste **t de Welch**, com graus de liberdade de Welch–Satterthwaite, sobre as médias de lotes; α = 0,01 com Bonferroni (6 pares × número de pontos). O resultado testa diferença de médias: não rejeitar não demonstra equivalência. Reportar diferença, IC e p-valor como compatibilidade estatística. Equivalência formal requer margens de BER com justificativa de telecomunicações, definidas antes da coleta, e TOST; nenhuma margem será inventada nesta revisão.
+
+A curva `ber` usa parada por erros e permanece descritiva: o número de lotes
+observados depende dos erros. IC t e limite de zero erros não têm cobertura
+nominal garantida sob parada adaptativa. Para validação inferencial no M7,
+usar coleta independente com quantidade de lotes `N` definida antes de observar
+os resultados: config derivada com `min_batches = N`,
+`max_bits = N · 256 · 672` e `target_errors = max_bits + 1`, dentro de `u64`.
+Isso usa a CLI existente e força parada por orçamento, sem mudar `contract/`.
+Não escolher `N` após olhar o p-valor.
+
+Referências metodológicas: [Welch na documentação SciPy](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.ttest_ind.html)
+e [TOST e margens na documentação statsmodels](https://www.statsmodels.org/stable/generated/statsmodels.stats.weightstats.ttost_ind.html).
+Estas referências não acrescentam dependências à implementação.
 
 ## Validação
 
@@ -295,9 +330,9 @@ Cada implementação expõe `--mode golden`, que lê as entradas e grava saídas
 
 ### Testes estatísticos
 
-- AWGN (`h = [1]`, CSI perfeito): a teoria cai no IC 99% simulado em todo ponto com ≥ 100 erros (Bonferroni).
-- Rayleigh com CSI perfeito: idem contra a teoria de Rayleigh.
-- Rayleigh com CSI estimado (perfil principal): equivalência entre as quatro linguagens pelo teste da seção "Análise".
+- AWGN (`h = [1]`, CSI perfeito), na coleta fixa independente: avaliar teoria com IC simultâneos de família 99%; cada um usa `α_local = 0,01/m`, em que `m` conta os pontos e implementações dos dois cenários teóricos. O critério de ≥ 100 erros indica suficiência para a aproximação por lotes; abaixo disso, registrar "evidência insuficiente", sem aprovação automática ou coleta até obter significância.
+- Rayleigh com CSI perfeito: mesma coleta fixa e família de IC contra a teoria de Rayleigh.
+- Rayleigh com CSI estimado (perfil principal): comparação das quatro linguagens na coleta fixa pela seção "Análise estatística"; compatibilidade não será rotulada como equivalência.
 - Mesma config e semente rodada duas vezes → contagens idênticas.
 - `workers = 1` e `workers = 4` → contagens idênticas.
 - Carga longa sem crescimento de memória, deadlock ou worker preso.
@@ -330,7 +365,7 @@ report/
 
 ## Marcos (um commit cada)
 
-Duas fases. A Fase 1 entrega o caminho inteiro funcionando, das quatro implementações até `make analyze`, em carga reduzida. A Fase 2 analisa, corrige, otimiza e só então mede em escala. M0 e M1 estão concluídos e commitados.
+Duas fases. A Fase 1 entrega o caminho inteiro funcionando, das quatro implementações até `make analyze`, em carga reduzida. A Fase 2 analisa, corrige, otimiza e só então mede em escala. M0–M4 estão concluídos e commitados; a revisão didática atual não conclui M5–M10.
 
 **Regra da Fase 1:** sem teste estatístico contra teoria, profiling ou calibração. Achado não bloqueante vai para a seção "Pendente para a Fase 2" do `NOTES.md` da linguagem e é resolvido no M7.
 
@@ -368,7 +403,7 @@ Para cada marco, de M2 a M10, sem pausa entre eles:
 
 | Marco | Entrega | Aceite |
 |---|---|---|
-| M7 Validação e correções | revisão das quatro implementações e do harness contra este plano; testes estatísticos (AWGN e Rayleigh-CSI contra teoria, equivalência entre linguagens, determinismo); correção de todo achado, incluindo os pendentes da Fase 1 | `make test`, golden e `make validate` passam; cada achado e correção registrado em `NOTES.md` |
+| M7 Validação e correções | revisão das quatro implementações e do harness contra este plano; testes estatísticos (AWGN e Rayleigh-CSI contra teoria, compatibilidade entre linguagens, determinismo); correção de todo achado, incluindo os pendentes da Fase 1 | `make test`, golden e `make validate` passam; cada achado e correção registrado em `NOTES.md` |
 | M8 Otimização e calibração | uma rodada de profiler por linguagem; depois calibrar `perf.n_batches` (C++ single-thread na CPU 2 ≥ 5 s), gravar no perfil e congelar | golden e `make validate` continuam passando; `n_batches` gravado |
 | M9 Medição completa | suítes `single`, `scaling`, `memory` na carga congelada, com repetições e controle de ruído completos | `make bench SUITE=single` e `make bench SUITE=scaling,memory` geram `results/` completo |
 | M10 Relatório final | figuras e tabelas em PT-BR, metodologia, limitações, ameaças à validade | todas as figuras regeneram de `results/` com `make analyze` |
@@ -378,15 +413,15 @@ Antes do M9, registrar em `bench/NOTES.md` a estimativa de tempo total de máqui
 ## Critérios de aceite finais
 
 - As quatro versões passam em todos os vetores dourados e rejeitam todas as configs inválidas.
-- AWGN e Rayleigh com CSI perfeito são compatíveis com a teoria; o perfil principal é estatisticamente equivalente entre as quatro linguagens.
+- AWGN e Rayleigh com CSI perfeito são compatíveis com a teoria; o perfil principal tem a comparação entre linguagens reportada com diferença, IC e p-valor; equivalência só pode ser afirmada com margens previamente justificadas e TOST.
 - Contagens independem do número de workers.
 - Relatório com throughput single-thread (P-core e E-core), stages, escalabilidade em E-cores, memória, BER × `Eb/N0` com IC, todos com IC e metadados suficientes para reproduzir.
 - Setup, warmup/JIT e trabalho aparecem separados; nenhuma comparação mistura cargas diferentes.
 
 ## Ameaças à validade (registrar no relatório)
 
-- RNGs diferentes por linguagem: custo visível no estágio `bits`/`awgn`/`channel_conv`.
-- Backends FFT diferentes: FFTW (IT++ via apt e FFTW.jl com versões possivelmente distintas), pocketfft (NumPy), rustfft.
+- RNGs diferentes por linguagem: custo de bits e ruído nos estágios `bits`/`awgn`; taps no `e2e` e no profiler, fora do timer de `channel_conv`.
+- Backends FFT diferentes: FFTW (IT++ via apt e FFTW.jl com versões possivelmente distintas), pocketfft (NumPy), rustfft. C++ delega o ciclo de vida dos planos à interface IT++; Rust retém planos e scratch explícitos. M0 verificou flags e escala, não reutilização de planos; M8 deve observar esse custo.
 - IT++ do apt compilada com flags genéricas; C++ do usuário com `-march=native`.
 - CPU híbrida e notebook com limite térmico: mitigados por pinagem, turbo desligado, cooldown e ordem aleatória, não eliminados.
 - Autoria por agente de IA nas quatro linguagens.

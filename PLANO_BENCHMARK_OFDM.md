@@ -14,6 +14,10 @@ continuam pendentes. A versão legível precisa manter as mesmas contagens para
 cada semente e os mesmos vetores dourados, com evidência anterior/posterior.
 O roteiro executável e as derivações estão em `LECTURE.md`.
 
+Na continuação para a lecture, M5 Julia passou no aceite e na revisão
+independente. As quatro linguagens agora compartilham o roteiro executável;
+M6–M10 permanecem pendentes.
+
 | Bloco | Pergunta que a lecture responde | Evidência prática |
 |---|---|---|
 | Modelo OFDM | Por que o CP transforma a convolução em ganho por subportadora? | golden de CP/canal, Parseval e resposta `H[k]` |

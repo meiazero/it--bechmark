@@ -5,6 +5,7 @@ export PYTHONHASHSEED := 0
 
 .PHONY: doctor golden test build-cpp test-cpp build-python test-python
 .PHONY: build-rust test-rust
+.PHONY: build-julia test-julia
 
 doctor:
 	python tools/check_system.py
@@ -14,7 +15,7 @@ golden:
 	uv run --project tools --locked python tools/theory.py
 	python tools/check_golden.py --self-test
 
-test: build-cpp build-python build-rust
+test: build-cpp build-python build-rust build-julia
 	uv run --project tools --locked python -m unittest discover -s tools -p 'test_*.py' -v
 
 build-cpp:
@@ -35,3 +36,9 @@ build-rust:
 
 test-rust: build-rust
 	uv run --project tools --locked python -m unittest discover -s tools -p test_implementations.py -k rust -v
+
+build-julia:
+	julia --startup-file=no --project=impl/julia -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+
+test-julia: build-julia
+	uv run --project tools --locked python -m unittest discover -s tools -p test_implementations.py -k julia -v

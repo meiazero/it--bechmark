@@ -1,7 +1,7 @@
 # OFDM optimization lecture
 
-This lecture uses the working C++/IT++, Python/NumPy, and Rust simulators from
-M2–M4. Julia, the measurement harness, statistical simulator validation, the
+This lecture uses the C++/IT++, Python/NumPy, Rust, and Julia simulators from
+M2–M5. The measurement harness, statistical simulator validation, the
 profiler rounds, and the complete benchmark remain future milestones.
 There is no measured language ranking or measured speedup in this revision.
 
@@ -16,7 +16,7 @@ make test
 ```
 
 The E2E scenarios write inputs and outputs under
-`results/acceptance/{cpp,python,rust}/`. These are short correctness checks,
+`results/acceptance/{cpp,python,rust,julia}/`. These are short correctness checks,
 not publication measurements. `golden.jsonl` contains intermediate signals;
 `ber-1-0.jsonl` and `ber-4-1.jsonl` demonstrate worker-independent stopping;
 `stages.jsonl` contains isolated timing diagnostics.
@@ -24,7 +24,7 @@ not publication measurements. `golden.jsonl` contains intermediate signals;
 Read each `Worker.batch` beside the plan. Follow the same signal through mapping,
 resource grid, inverse FFT, cyclic prefix, direct channel convolution, noise,
 prefix removal, FFT, channel estimation, equalization, and decisions.
-In Python the first array axis holds independent OFDM symbols; C++ and Rust
+In Python the first array axis holds independent OFDM symbols; C++, Rust, and Julia
 advance through one symbol at a time. A batch contains 256 OFDM symbols and
 172,032 payload bits in every implementation.
 
@@ -44,7 +44,9 @@ Y[k]=\frac{1}{\sqrt{N}}\sum_n y[n]e^{-j2\pi kn/N}.$$
 Parseval therefore gives $\sum_n|x[n]|^2=\sum_k|X[k]|^2$.
 Library normalization is part of the interface: NumPy uses `norm="ortho"`;
 IT++ requires inverse multiplication by $\sqrt{N}$ and forward division by
-$\sqrt{N}$; rustfft requires division by $\sqrt{N}$ on both paths.
+$\sqrt{N}$; rustfft and Julia's FFTW forward/backward plans require division
+by $\sqrt{N}$ on both paths. Julia retains concrete plans with `FFTW.ESTIMATE`,
+matching the planning flag observed in IT++.
 The IT++ scaling and planning flags are established by the local M0 probe.
 C++ delegates plan lifetime to the IT++ function interface and pre-exercises
 both directions during setup; Rust retains explicit plans and scratch. M0
@@ -104,7 +106,7 @@ Python vectorizes a full batch and exchanges more live array storage for fewer
 interpreter loops. C++ and Rust use symbol-sized temporary vectors and exchange
 smaller live working sets for repeated allocation. Persistent processes in
 Python avoid per-batch interpreter startup but add serialization and process
-memory. Threads share address space in C++ and Rust. These are mechanisms to
+memory. Threads share address space in C++, Rust, and Julia. These are mechanisms to
 investigate in M8–M9, not conclusions about which implementation is faster.
 For one complex128 signal buffer, the payload alone is 1 MiB for a
 256-by-256 batch versus 4 KiB for one 256-sample symbol; a prefixed buffer

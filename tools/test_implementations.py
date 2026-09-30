@@ -11,6 +11,18 @@ import contract
 
 
 class ImplementationChecks(unittest.TestCase):
+    def test_julia_e2e(self):
+        self.accept(
+            "julia",
+            [
+                "julia",
+                "-O3",
+                "--startup-file=no",
+                f"--project={contract.ROOT / 'impl/julia'}",
+                str(contract.ROOT / "impl/julia/src/main.jl"),
+            ],
+        )
+
     def test_rust_e2e(self):
         self.accept("rust", [str(contract.ROOT / "build/rust/release/ofdm-rust")])
 
@@ -47,9 +59,13 @@ class ImplementationChecks(unittest.TestCase):
         def run(config, mode, workers=1, label="run", expected=0):
             output = directory / f"{label}.jsonl"
             output.unlink(missing_ok=True)
+            invocation = command.copy()
+            if name == "julia":
+                threads = workers if type(workers) is int and 1 <= workers <= 4 else 1
+                invocation.insert(1, f"--threads={threads},0")
             result = subprocess.run(
                 [
-                    *command,
+                    *invocation,
                     "--config",
                     str(config),
                     "--mode",

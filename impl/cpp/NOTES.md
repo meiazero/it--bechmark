@@ -1,8 +1,62 @@
 # M0 environment findings
 
 Verified on September 30, 2026, against the installed Ubuntu packages. This file
-records M0 environment findings and the M1 review corrections. There is no C++
-OFDM simulator or benchmark workload yet.
+records environment findings, review corrections, and the M2 C++ workload.
+
+## M2 implementation and acceptance
+
+The C++ executable implements all four CLI modes with IT++ unitary FFTs, direct
+time convolution, Gray table decisions, signed-bin interpolation, and exact-zero
+ZF. A persistent thread pool draws one batch per atomic queue entry. Integer
+results are consumed in batch order; speculative results beyond the stopping
+batch are discarded. Four independent warmup batches are excluded from counts.
+Configuration validation happens before output creation; output replacement is
+atomic. Metadata utilities (`git` and coreutils `sha256sum`) run only during setup,
+without a shell, and hash the exact parsed bytes. No library dependency was added.
+
+### RNG fallback evidence
+
+`tests/seed_state_probe.cpp` fills all 769 IT++ state words with consecutive
+SplitMix64 outputs and restores that state. The installed DSFMT generator accepts
+the state but produces 1,000 invalid uniform/Gaussian draw pairs out of 1,000.
+Arbitrary words do not satisfy its floating-point state representation. Reproduce:
+
+```sh
+g++ -std=c++20 impl/cpp/tests/seed_state_probe.cpp -o /tmp/ofdm-seed-probe $(pkg-config --cflags --libs itpp)
+timeout 5 /tmp/ofdm-seed-probe
+```
+
+Observed output: `words=769`, `invalid_draws=1000`, exit 1. The plan's explicitly
+authorized fallback therefore uses `std::mt19937_64` and
+`std::normal_distribution<double>` for every production random draw. Every batch
+reseeds the full generator and resets the normal distribution's cached value.
+The acceptance checks repeat a seed exactly and change only its upper 32 bits.
+This RNG difference must remain visible in the final report and stage timings.
+
+### Acceptance cycle 1
+
+Failure boundaries were listed in the E2E test before implementation. `make
+test-cpp` passed all eleven golden cases, all 25 invalid configurations, malformed
+JSON and worker CLI cases, raw-byte fingerprints, BER/perf determinism with one
+and four workers, stopping at both target errors and max bits, high seed bits,
+diagnostic channels, and the complete stage output. Artifacts are retained under
+`results/acceptance/cpp/`. No theory test, calibration, or profiler round was run.
+
+### Pending for Phase 2
+
+Symbol-sized vectors allocate inside the batch; this deliberate initial ceiling
+is recorded in the `ponytail:` comment. M8 may optimize only profiler-supported
+hotspots. No performance claim is made from acceptance timings.
+
+### Acceptance cycle 2
+
+Independent review found that comparing aggregate BER after changing upper seed
+bits did not prove distinct random sequences. Added a native sequence check using
+the same production seed method, covering exact repeatability and distinct bits,
+taps, and noise when only the upper 32 seed bits change. The retained artifact is
+`results/acceptance/cpp/seed64.json`. The first review found no other blocker.
+The fresh second review confirmed this correction and reported no findings.
+`make golden` and the complete `make test` passed (22 checks) after the correction.
 
 ## Reproduce
 

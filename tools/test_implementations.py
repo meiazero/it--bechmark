@@ -10,6 +10,9 @@ import contract
 
 
 class ImplementationChecks(unittest.TestCase):
+    def test_rust_e2e(self):
+        self.accept("rust", [str(contract.ROOT / "build/rust/release/ofdm-rust")])
+
     def test_python_e2e(self):
         self.accept(
             "python",

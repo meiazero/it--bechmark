@@ -31,6 +31,10 @@ was performed. All generated acceptance evidence remains in
 
 ## Pending for Phase 2
 
+The M4 independent review identified a shared stage issue: `channel_conv` draws
+new taps inside the timed repetition instead of using a pregenerated tap batch.
+M7 must resolve this consistently across languages before performance reporting.
+
 Independent review reported no blocking or nonblocking findings. `make golden`
 and `make test` passed all 23 checks. Ruff 0.16.9 was already available in the
 local uv cache and was used for formatting and linting without adding any project

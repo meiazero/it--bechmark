@@ -44,6 +44,10 @@ diagnostic channels, and the complete stage output. Artifacts are retained under
 
 ### Pending for Phase 2
 
+The M4 independent review identified a shared stage issue: `channel_conv` draws
+new taps inside the timed repetition instead of using a pregenerated tap batch.
+M7 must resolve this consistently across languages before performance reporting.
+
 Symbol-sized vectors allocate inside the batch; this deliberate initial ceiling
 is recorded in the `ponytail:` comment. M8 may optimize only profiler-supported
 hotspots. No performance claim is made from acceptance timings.

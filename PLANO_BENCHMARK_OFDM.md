@@ -9,9 +9,9 @@ Princípio de justiça: **mesmo algoritmo, mesma carga, mesmo contrato numérico
 ## Regras para o agente implementador (Codex)
 
 1. O diretório `contract/` é a fonte da verdade. Não altere valores do contrato; se algo for impossível de cumprir, pare e reporte com evidência.
-2. Um marco (seção "Marcos") por PR. Um marco só termina quando o comando de aceite dele passa.
-3. Sem stubs, TODOs ou testes desativados para "passar". Teste que falha é reportado com a saída.
-4. Não introduza dependências fora das listadas; qualquer adição exige justificativa no PR.
+2. Execute M2 → M10 em sequência pelo "Loop de execução" (seção "Marcos"), sem pedir confirmação entre marcos. Um commit por marco, no `main`, só com o aceite passando e a validação sem achado bloqueante.
+3. Sem stubs, TODOs ou testes desativados para "passar". Teste que falha é corrigido dentro do loop.
+4. Não introduza dependências fora das listadas; qualquer adição exige justificativa no `NOTES.md` e na mensagem do commit.
 5. Registre cada desvio do contrato, bug encontrado e otimização aplicada em `impl/<lang>/NOTES.md`.
 
 ## Escopo
@@ -43,7 +43,7 @@ Coletado em 2026-09-30 via `lscpu -e`, `/sys/devices/cpu_{core,atom}/cpus`, `fre
 
 ### Versões fixadas
 
-**mise é só gerenciador de versões de linguagem/ferramenta.** `mise.toml` contém apenas `[tools]`: sem `[env]`, sem `[tasks]`, e nenhum comando do projeto usa `mise run` ou `mise exec`. O shell tem `mise activate`. Tarefas e variáveis de ambiente ficam no `Makefile` da raiz (GNU Make 4.3, já instalado).
+**mise é só gerenciador de versões de linguagem/ferramenta.** `mise.toml` contém apenas `[tools]`: sem `[env]`, sem `[tasks]`, e nenhum comando do projeto usa `mise run` ou `mise exec`. O shell interativo tem `mise activate`; em shell não interativo (agente), rodar `eval "$(mise env -s bash)"` antes de qualquer `make`, senão o `make doctor` acusa versões erradas de `uv`, `rust` e `cmake`. Tarefas e variáveis de ambiente ficam no `Makefile` da raiz (GNU Make 4.3, já instalado).
 
 `mise.toml` (valores de `mise latest` em 2026-09-30):
 
@@ -78,7 +78,8 @@ Alvos do `Makefile` (todos `.PHONY`; cada marco acrescenta os seus):
 | `make doctor` | `python tools/check_system.py` |
 | `make golden` | `python -m tools.golden.generate`, `uv run --project tools --locked python tools/theory.py`, `python tools/check_golden.py --self-test` |
 | `make test` | `uv run --project tools --locked python -m unittest discover -s tools -p 'test_*.py'` + testes de cada implementação já existente |
-| `make bench SUITE=single` / `SUITE=scaling,memory` | `uv run --project tools --locked python -m bench --suite $(SUITE)` |
+| `make bench SUITE=smoke` / `SUITE=single` / `SUITE=scaling,memory` | `uv run --project tools --locked python -m bench --suite $(SUITE)` |
+| `make validate` | `uv run --project tools --locked python -m bench.validate` (testes estatísticos da seção "Validação") |
 | `make analyze` | `uv run --project tools --locked python -m bench.analyze` |
 
 Build por linguagem também vira alvo (`make build-cpp`, `build-rust`, ...) quando o marco correspondente chegar.
@@ -226,7 +227,7 @@ Orquestrador em Python (`bench/`, ambiente de `tools/`), fixado na CPU 0.
 
 ### Modos de medição
 
-- **`perf` (primário):** carga fixa em `EbN0 = 10 dB`, `n_batches` calibrado no fim do M2 para que C++ single-thread leve ≥ 5 s, depois congelado. Sem timers internos além de `t0`/`t1` ao redor do trabalho. Throughput = `n_batches · 256 · 672 / work_s`.
+- **`perf` (primário):** carga fixa em `EbN0 = 10 dB`, `n_batches` calibrado no M8 para que C++ single-thread leve ≥ 5 s, depois congelado; até lá fica `null` no perfil e a suíte `smoke` usa uma config derivada (ver "Marcos"). Sem timers internos além de `t0`/`t1` ao redor do trabalho. Throughput = `n_batches · 256 · 672 / work_s`.
 - **`stages`:** cada estágio isolado sobre entradas pré-geradas de um lote, R repetições, mediana em ns por símbolo OFDM. Estágios: `bits`, `qam_map`, `grid`, `ifft`, `cp_add`, `channel_conv`, `awgn`, `cp_remove`, `fft`, `chan_est`, `zf`, `demap_count`. Reportar a soma dos estágios contra o `e2e`; a diferença é glue/alocação.
 - **`ber`:** curva de qualidade com critério de parada. Não é medição de desempenho.
 
@@ -327,35 +328,52 @@ results/<run_id>/raw/, env.json
 report/
 ```
 
-## Correções pendentes do M1 (fazer antes do M2)
+## Marcos (um commit cada)
 
-Achados da revisão de 2026-09-30 sobre o M1 ainda não commitado:
+Duas fases. A Fase 1 entrega o caminho inteiro funcionando, das quatro implementações até `make analyze`, em carga reduzida. A Fase 2 analisa, corrige, otimiza e só então mede em escala. M0 e M1 estão concluídos e commitados.
 
-Status em 2026-09-30: itens 1–4 aplicados; arquivos dourados regenerados,
-`make golden` e `make test` passam, e duas regenerações reproduzem os 12 arquivos
-de referência byte a byte. O item 5 é concluído pelo commit do M1. Nesta revisão,
-`make doctor` falhou por seleção de `uv` antigo no PATH do shell automatizado;
-as versões fixadas permanecem intactas. Evidência em `impl/cpp/NOTES.md`.
+**Regra da Fase 1:** sem teste estatístico contra teoria, profiling ou calibração. Achado não bloqueante vai para a seção "Pendente para a Fase 2" do `NOTES.md` da linguagem e é resolvido no M7.
 
-1. **mise só como gerenciador:** mover `[env]` e `[tasks]` de `mise.toml` para um `Makefile` na raiz (alvos `doctor`, `golden`, `test`, com os mesmos comandos); `check_system.py` continua exigindo as variáveis de threads (agora vindas do `Makefile`) e passa a checar `nlohmann-json3-dev=3.11.3-1`; `contract/README.md`, `tools/NOTES.md` e `impl/cpp/NOTES.md` trocam `mise run`/`mise exec` por `make <alvo>`.
-2. **`workers` fora da configuração:** remover o campo de `profile_main.json`, `config.schema.json` e dos arquivos inválidos (`zero_workers`, `worker_fraction` viram casos de CLI); `check_golden.py` recebe `--workers`. Hoje o valor existe no arquivo e na CLI, e o README manda hashear "após override da CLI".
-3. **`config_sha256` = SHA-256 dos bytes do arquivo.** A regra atual obriga C++, Julia e Rust a reproduzir byte a byte o `json.dumps` do CPython (ordem de chaves, formato de floats e expoentes). É frágil e não mede nada do benchmark.
-4. **Precisão da DFT de referência:** a DFT atual difere da FFT do NumPy em até 1,7e-13 no caso `transforms` e 2,3e-13 em `end_to_end.equalized`, margem de só ~4× sobre a tolerância de 1e-12. Com twiddles por `(k·n) mod N` o erro cai para 2,6e-15 (medido nesta revisão). Regenerar os arquivos dourados depois da troca.
-5. Commitar o M1 só depois dos itens 1–4, com os arquivos dourados regenerados.
+### Loop de execução
 
-## Marcos (um PR cada)
+Para cada marco, de M2 a M10, sem pausa entre eles:
+
+1. **Implementar** a entrega do marco.
+2. **Aceite:** rodar o comando de aceite do marco. Falhou → corrigir e repetir este passo.
+3. **Validar com GPT Luna:** abrir um subagente `explorer` novo (`~/.codex/agents/explorer.toml`, modelo `gpt-5.6-luna`), sem o histórico de rodadas anteriores. Ele não edita arquivos; pode ler o repositório e rodar testes e comandos de aceite. Entrada: este plano, `AGENTS.md`, `git diff HEAD` e a saída do aceite. Saída: lista de achados, cada um com `arquivo:linha`, evidência e classe `bloqueante` ou `não bloqueante`.
+4. **Corrigir:** achado bloqueante → corrigir e voltar ao passo 2. Achado não bloqueante → na Fase 1, registrar em "Pendente para a Fase 2"; na Fase 2, corrigir e voltar ao passo 2.
+5. **Fechar:** aceite passando e validação sem bloqueante → registrar no `NOTES.md` cada ciclo (achados e correções), commitar `feat(mN): ...` e seguir para o próximo marco.
+
+**Bloqueante** = viola o contrato, uma regra de "Regras de implementação idiomática" ou o `AGENTS.md`, ou faz o aceite passar sem provar o que promete (stub, teste tautológico, tolerância afrouxada).
+
+**Condições de parada (as únicas):**
+
+1. Valor do contrato impossível de cumprir: parar e reportar com evidência.
+2. Ação que só o usuário pode fazer (`sudo`, instalar pacote do sistema, gravar `no_turbo`, ligar o carregador): parar e reportar o comando exato.
+3. O mesmo achado bloqueante sobrevive a 3 ciclos de correção: parar e reportar a premissa suspeita, o teste que a confirma e um caminho alternativo.
+
+**Carga `smoke`:** config derivada pelo harness a partir de `profile_main.json` (`perf.n_batches` pequeno, poucos pontos `Eb/N0`, 1 repetição, sem cooldown, carga longa curta), gravada em `results/<run_id>/`. Nunca entra em `contract/` e nunca é usada em comparação publicada. Antes do M6, os testes de `perf` e `stages` usam uma cópia temporária do perfil com `perf.n_batches` pequeno, criada pelo próprio teste.
+
+### Fase 1 — ponta a ponta
 
 | Marco | Entrega | Aceite |
 |---|---|---|
 | M0 Ambiente | `mise.toml`, `check_system.py`, `git init`. Descobrir: flag FFTW da IT++, segurança do RNG IT++ por thread (teste com 2 threads e mesma semente). | `make doctor` passa; achados em `impl/cpp/NOTES.md` |
 | M1 Contrato | perfil, schemas, `invalid_configs`, gerador golden, `theory.py`, `check_golden.py` | `make golden` e `make test` passam; regenerar produz arquivos byte-idênticos |
-| M2 C++/IT++ | serial + paralelo, modos `golden`/`ber`/`perf`/`stages` | golden, configs inválidas, AWGN e Rayleigh-CSI contra teoria, teste da semente de 64 bits. Por último: calibrar `perf.n_batches` (C++ single-thread na CPU 2 ≥ 5 s), gravar no perfil e congelar antes do M3 |
-| M3–M5 Python, Rust, Julia | mesmos modos | tudo do M2 + equivalência estatística com C++ |
-| M6 Harness single-thread | orquestrador, env, pinagem, repetições, stages, tabelas | `make bench SUITE=single` gera `results/` completo |
-| M7 Escalabilidade e memória | E-cores 1/2/4/8, cgroup, psutil, carga longa | `make bench SUITE=scaling,memory` |
-| M8 Relatório | figuras e tabelas em PT-BR, metodologia, limitações, ameaças à validade | todas as figuras regeneram de `results/` com `make analyze` |
+| M2 C++/IT++ | serial + paralelo, modos `golden`/`ber`/`perf`/`stages` | golden, configs inválidas, teste da semente de 64 bits, `--workers 1` e `--workers 4` com contagens idênticas |
+| M3–M5 Python, Rust, Julia | mesmos modos | mesmo aceite do M2, exceto o teste da semente de 64 bits |
+| M6 Harness e relatório esqueleto | orquestrador, `env.json`, pinagem, todas as suítes (`single`, `stages`, `scaling`, `memory`, `ber`) na carga `smoke`; análise, tabelas e figuras em PT-BR | `make bench SUITE=smoke` e `make analyze` rodam sem erro e geram `results/` e `report/` com as quatro linguagens |
 
-Antes do M7, reportar a estimativa de tempo total de máquina (a partir da calibração do M2 e dos tempos medidos no M6) e aguardar aprovação.
+### Fase 2 — análises e correções
+
+| Marco | Entrega | Aceite |
+|---|---|---|
+| M7 Validação e correções | revisão das quatro implementações e do harness contra este plano; testes estatísticos (AWGN e Rayleigh-CSI contra teoria, equivalência entre linguagens, determinismo); correção de todo achado, incluindo os pendentes da Fase 1 | `make test`, golden e `make validate` passam; cada achado e correção registrado em `NOTES.md` |
+| M8 Otimização e calibração | uma rodada de profiler por linguagem; depois calibrar `perf.n_batches` (C++ single-thread na CPU 2 ≥ 5 s), gravar no perfil e congelar | golden e `make validate` continuam passando; `n_batches` gravado |
+| M9 Medição completa | suítes `single`, `scaling`, `memory` na carga congelada, com repetições e controle de ruído completos | `make bench SUITE=single` e `make bench SUITE=scaling,memory` geram `results/` completo |
+| M10 Relatório final | figuras e tabelas em PT-BR, metodologia, limitações, ameaças à validade | todas as figuras regeneram de `results/` com `make analyze` |
+
+Antes do M9, registrar em `bench/NOTES.md` a estimativa de tempo total de máquina (a partir da calibração do M8 e dos tempos medidos no smoke do M6) e seguir sem pausa.
 
 ## Critérios de aceite finais
 
@@ -377,5 +395,5 @@ Antes do M7, reportar a estimativa de tempo total de máquina (a partir da calib
 
 1. Somente 16-QAM na trilha principal; 64-QAM como extensão.
 2. Somente APIs padrão; versões aceleradas (Numba, JAX etc.) em trilha separada.
-3. Orçamento de máquina desconhecido: o M2 calibra, o M6 mede e o M7 espera aprovação.
+3. Orçamento de máquina desconhecido: o M6 mede o smoke, o M8 calibra e a estimativa fica registrada antes do M9, sem pausa.
 4. Turbo desligado na rodada primária.

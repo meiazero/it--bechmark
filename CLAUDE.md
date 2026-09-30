@@ -5,16 +5,18 @@
 ## Rules
 
 - `contract/` is the source of truth. Never change contract values; if one cannot be met, stop and report with evidence.
-- One milestone per PR. A milestone is done only when its acceptance command passes.
-- No stubs, TODOs, or disabled tests. Report a failing test with its output.
-- No dependencies beyond those listed in the plan without a written justification in the PR.
+- Run M2 through M10 back to back using the plan's "Loop de execução": implement, pass the
+  acceptance command, validate with a fresh `explorer` subagent (`gpt-5.6-luna`), fix, then one
+  commit per milestone on `main`. Stop only on the plan's three stop conditions.
+- No stubs, TODOs, or disabled tests. Fix a failing test inside the loop; report it with its output only at a stop condition.
+- No dependencies beyond those listed in the plan without a written justification in `NOTES.md` and the commit message.
 - Log every contract deviation, bug found, and optimization applied in `impl/<lang>/NOTES.md`.
 - `tools/golden/` uses the Python stdlib only and never imports any competing implementation.
 - Fairness rules (allowed/forbidden per language, build flags, one profiling round each) are in the plan's "Regras de implementação idiomática" section.
 
 ## Environment
 
-mise is only a language/tool version manager: `mise.toml` holds `[tools]` and nothing else. Never add `[env]` or `[tasks]`, and never use `mise run` or `mise exec`. Tasks and environment variables live in the root `Makefile` (thread variables via `export`). System packages (`libitpp-dev`, `libfftw3-dev`, `nlohmann-json3-dev`, `g++`) are pinned and checked by `tools/check_system.py`.
+mise is only a language/tool version manager: `mise.toml` holds `[tools]` and nothing else. Never add `[env]` or `[tasks]`, and never use `mise run` or `mise exec`. Tasks and environment variables live in the root `Makefile` (thread variables via `export`). In a non-interactive shell, run `eval "$(mise env -s bash)"` before any `make` target; without it `make doctor` finds the wrong `uv`, `rust`, and `cmake`. System packages (`libitpp-dev`, `libfftw3-dev`, `nlohmann-json3-dev`, `g++`) are pinned and checked by `tools/check_system.py`.
 
 ```sh
 make doctor   # verify toolchain and probe IT++

@@ -3,7 +3,7 @@ export OPENBLAS_NUM_THREADS := 1
 export MKL_NUM_THREADS := 1
 export PYTHONHASHSEED := 0
 
-.PHONY: doctor golden test build-cpp test-cpp
+.PHONY: doctor golden test build-cpp test-cpp build-python test-python
 
 doctor:
 	python tools/check_system.py
@@ -13,7 +13,7 @@ golden:
 	uv run --project tools --locked python tools/theory.py
 	python tools/check_golden.py --self-test
 
-test: build-cpp
+test: build-cpp build-python
 	uv run --project tools --locked python -m unittest discover -s tools -p 'test_*.py' -v
 
 build-cpp:
@@ -21,4 +21,10 @@ build-cpp:
 	cmake --build build/cpp
 
 test-cpp: build-cpp
-	uv run --project tools --locked python -m unittest discover -s tools -p test_implementations.py -v
+	uv run --project tools --locked python -m unittest discover -s tools -p test_implementations.py -k cpp -v
+
+build-python:
+	uv sync --project impl/python --locked
+
+test-python: build-python
+	uv run --project tools --locked python -m unittest discover -s tools -p test_implementations.py -k python -v

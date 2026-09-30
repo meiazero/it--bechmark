@@ -28,7 +28,8 @@ JSON Schema cannot express all cross-field conditions. Native validators must
 also enforce `max_bits >= min_batches * B * 672`, enough u64 headroom for the final
 whole batch, and the selected mode's restrictions. Perfect CSI is diagnostic and
 is rejected in `perf` and `stages` modes. `perf.n_batches` is intentionally null:
-M2 must measure the actual C++ workload before filling and freezing it. Null is
+M8 measures the profiled C++ workload before filling and freezing it; until then,
+tests and the M6 smoke suite use a derived copy outside `contract/`. Null is
 valid for `golden` and `ber`, and invalid for `perf` execution. No performance
 calibration has been invented.
 

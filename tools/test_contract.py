@@ -59,7 +59,7 @@ class ConfigurationChecks(unittest.TestCase):
         self.profile.update(master_seed=contract.U64_MAX, channel="awgn", csi="perfect")
         self.profile["ber"].update(target_errors=2000, ebn0_db=[-2, 4.5])
         contract.validate_config(self.profile, "ber")
-        with self.assertRaisesRegex(ValueError, "awaits M2"):
+        with self.assertRaisesRegex(ValueError, "awaits M8"):
             contract.validate_config(self.profile, "perf")
         self.profile["perf"]["n_batches"] = 10
         with self.assertRaisesRegex(ValueError, "diagnostic only"):

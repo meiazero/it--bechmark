@@ -117,7 +117,7 @@ def validate_config(config: Any, mode: str | None = None) -> None:
     if batches is not None:
         integer(batches, "perf.n_batches", maximum=U64_MAX // batch_bits)
     elif mode == "perf":
-        raise ValueError("perf.n_batches awaits M2 calibration")
+        raise ValueError("perf.n_batches awaits M8 calibration")
     object_keys(config["stages"], {"repetitions"}, "stages")
     integer(config["stages"]["repetitions"], "stages.repetitions")
     if mode in ("perf", "stages") and config["csi"] != "estimated":

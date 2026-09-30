@@ -12,7 +12,7 @@ were unspecified initial values in the plan and are recorded in the profile.
 PDP values are stored with 17 significant digits. The batch remains 256, the
 payload remains 672 bits, and nominal symbol energy remains 216.
 
-`perf.n_batches` remains null until M2's actual C++ timing calibration; this is
+`perf.n_batches` remains null until M8's C++ timing calibration; this is
 not an executable performance workload. The reference validator rejects it in
 perf mode. Golden records have a deterministic-case branch in the result schema;
 BER/perf/stages have the point/counter branch described in the plan.

@@ -16,7 +16,8 @@ O roteiro executável e as derivações estão em `LECTURE.md`.
 
 Na continuação para a lecture, M5 Julia passou no aceite e na revisão
 independente. As quatro linguagens agora compartilham o roteiro executável;
-M6–M10 permanecem pendentes.
+M6 também passou: harness, cinco suítes smoke e figuras/tabelas em PT-BR.
+M7–M10 permanecem pendentes.
 
 | Bloco | Pergunta que a lecture responde | Evidência prática |
 |---|---|---|
@@ -369,7 +370,7 @@ report/
 
 ## Marcos (um commit cada)
 
-Duas fases. A Fase 1 entrega o caminho inteiro funcionando, das quatro implementações até `make analyze`, em carga reduzida. A Fase 2 analisa, corrige, otimiza e só então mede em escala. M0–M4 estão concluídos e commitados; a revisão didática atual não conclui M5–M10.
+Duas fases. A Fase 1 entrega o caminho inteiro funcionando, das quatro implementações até `make analyze`, em carga reduzida. A Fase 2 analisa, corrige, otimiza e só então mede em escala. M0–M6 estão concluídos e commitados; M7–M10 permanecem pendentes.
 
 **Regra da Fase 1:** sem teste estatístico contra teoria, profiling ou calibração. Achado não bloqueante vai para a seção "Pendente para a Fase 2" do `NOTES.md` da linguagem e é resolvido no M7.
 

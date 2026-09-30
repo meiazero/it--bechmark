@@ -1,9 +1,10 @@
 # OFDM optimization lecture
 
 This lecture uses the C++/IT++, Python/NumPy, Rust, and Julia simulators from
-M2–M5. The measurement harness, statistical simulator validation, the
-profiler rounds, and the complete benchmark remain future milestones.
-There is no measured language ranking or measured speedup in this revision.
+M2–M5. The M6 smoke harness generates Portuguese figures and tables for all four
+languages. Statistical simulator validation, profiler rounds, and the complete
+benchmark remain future milestones. Smoke timings demonstrate execution only;
+primary performance conclusions require M8–M9.
 
 ## 1. Start with an executable numerical model
 
@@ -100,10 +101,10 @@ and tap scale calculation into `DspConfig` during setup. Python retains its
 pilot values and Gray level table; Rust already prepared geometry and tap
 scales. The same operations remain in the same model. Removing invariant
 work is justified by where it occurs, not by a claimed stopwatch result.
-All three paths now name transmit and receive signals explicitly.
+All four paths now name transmit and receive signals explicitly.
 
 Python vectorizes a full batch and exchanges more live array storage for fewer
-interpreter loops. C++ and Rust use symbol-sized temporary vectors and exchange
+interpreter loops. C++, Rust, and Julia use symbol-sized temporary vectors and exchange
 smaller live working sets for repeated allocation. Persistent processes in
 Python avoid per-batch interpreter startup but add serialization and process
 memory. Threads share address space in C++, Rust, and Julia. These are mechanisms to

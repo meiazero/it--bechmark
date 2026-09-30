@@ -2,7 +2,11 @@
 name = "ofdm-benchmark-tools"
 version = "0.1.0"
 requires-python = "==3.14.7"
-dependencies = ["scipy"]
+dependencies = [
+    "matplotlib>=3.11.2",
+    "psutil>=7.2.2",
+    "scipy",
+]
 
 [tool.ruff]
 target-version = "py314"

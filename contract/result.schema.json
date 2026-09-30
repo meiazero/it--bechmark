@@ -1,0 +1,337 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OFDM benchmark JSON Lines record",
+  "description": "One measurement record per Eb/N0 point, or one golden record per case. All JSON numbers must be finite; counter relationships are defined in README.md.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "impl",
+        "git_sha",
+        "mode",
+        "profile_id",
+        "config_sha256",
+        "master_seed",
+        "workers",
+        "case_id",
+        "outputs"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "impl": {
+          "enum": [
+            "cpp",
+            "python",
+            "julia",
+            "rust"
+          ]
+        },
+        "git_sha": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "mode": {
+          "const": "golden"
+        },
+        "profile_id": {
+          "const": "ofdm_16qam_main_v1"
+        },
+        "config_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "master_seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "workers": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "case_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "outputs": {
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "impl",
+        "git_sha",
+        "mode",
+        "profile_id",
+        "config_sha256",
+        "master_seed",
+        "workers",
+        "ebn0_db",
+        "n_batches",
+        "n_symbols",
+        "n_bits",
+        "n_errors",
+        "sum_batch_errors_sq",
+        "n_symbols_with_errors",
+        "zf_zero_count",
+        "status",
+        "setup_s",
+        "warmup_s",
+        "work_s"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "impl": {
+          "enum": [
+            "cpp",
+            "python",
+            "julia",
+            "rust"
+          ]
+        },
+        "git_sha": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "mode": {
+          "enum": [
+            "ber",
+            "perf",
+            "stages"
+          ]
+        },
+        "profile_id": {
+          "const": "ofdm_16qam_main_v1"
+        },
+        "config_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "master_seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "workers": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "ebn0_db": {
+          "type": "number"
+        },
+        "n_batches": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "n_symbols": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "n_bits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "n_errors": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "sum_batch_errors_sq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "n_symbols_with_errors": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "zf_zero_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "status": {
+          "enum": [
+            "target_errors",
+            "max_bits",
+            "fixed_work",
+            "timeout"
+          ]
+        },
+        "setup_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "warmup_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "work_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "stage_ns_per_symbol": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bits",
+            "qam_map",
+            "grid",
+            "ifft",
+            "cp_add",
+            "channel_conv",
+            "awgn",
+            "cp_remove",
+            "fft",
+            "chan_est",
+            "zf",
+            "demap_count",
+            "e2e"
+          ],
+          "properties": {
+            "bits": {
+              "type": "number",
+              "minimum": 0
+            },
+            "qam_map": {
+              "type": "number",
+              "minimum": 0
+            },
+            "grid": {
+              "type": "number",
+              "minimum": 0
+            },
+            "ifft": {
+              "type": "number",
+              "minimum": 0
+            },
+            "cp_add": {
+              "type": "number",
+              "minimum": 0
+            },
+            "channel_conv": {
+              "type": "number",
+              "minimum": 0
+            },
+            "awgn": {
+              "type": "number",
+              "minimum": 0
+            },
+            "cp_remove": {
+              "type": "number",
+              "minimum": 0
+            },
+            "fft": {
+              "type": "number",
+              "minimum": 0
+            },
+            "chan_est": {
+              "type": "number",
+              "minimum": 0
+            },
+            "zf": {
+              "type": "number",
+              "minimum": 0
+            },
+            "demap_count": {
+              "type": "number",
+              "minimum": 0
+            },
+            "e2e": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "stages"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stage_ns_per_symbol"
+            ],
+            "properties": {
+              "status": {
+                "enum": [
+                  "fixed_work",
+                  "timeout"
+                ]
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "stage_ns_per_symbol"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "ber"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "target_errors",
+                  "max_bits",
+                  "timeout"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "perf"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "fixed_work",
+                  "timeout"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -6,17 +6,3 @@ rust = "1.98.1"
 cmake = "4.4.3"
 ninja = "1.13.2"
 tokei = "15.0.0"
-
-[env]
-OMP_NUM_THREADS = "1"
-OPENBLAS_NUM_THREADS = "1"
-MKL_NUM_THREADS = "1"
-PYTHONHASHSEED = "0"
-
-[tasks.doctor]
-description = "Verify the M0 environment and probe the installed IT++ library"
-run = "python tools/check_system.py"
-
-[tasks.test]
-description = "Run the M0 environment checker tests"
-run = "python -m unittest discover -s tools -p 'test_*.py' -v"

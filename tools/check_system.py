@@ -12,6 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 SYSTEM_PACKAGES = {
     "libitpp-dev": "4.3.1-10build1",
     "libfftw3-dev": "3.3.10-1ubuntu3",
+    "nlohmann-json3-dev": "3.11.3-1",
+}
+THREAD_ENV = {
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "PYTHONHASHSEED": "0",
 }
 TOOL_COMMANDS = {
     "python": ["python", "--version"],
@@ -61,7 +68,7 @@ def check_versions(config: dict) -> None:
             run(["pkg-config", "--modversion", library]),
             expected,
         )
-    for variable, expected in config["env"].items():
+    for variable, expected in THREAD_ENV.items():
         require_version(variable, os.environ.get(variable, "<unset>"), expected)
     run(["git", "rev-parse", "--git-dir"])
     print("PASS Git repository initialized", flush=True)

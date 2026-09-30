@@ -1,8 +1,8 @@
 # M0 environment findings
 
-Verified on September 30, 2026, against the installed Ubuntu packages. The
-benchmark plan and its numerical contract have not been changed. Only M0 is
-implemented; there is no OFDM simulator or benchmark workload yet.
+Verified on September 30, 2026, against the installed Ubuntu packages. This file
+records M0 environment findings and the M1 review corrections. There is no C++
+OFDM simulator or benchmark workload yet.
 
 ## Reproduce
 
@@ -11,16 +11,16 @@ From the repository root:
 ```sh
 mise trust mise.toml
 mise install
-mise run doctor
-mise run test
+make doctor
+make test
 ```
 
 `doctor` rejects missing tools, mismatched versions, uninstalled development
 packages, incorrect thread environment variables, and a missing Git repository.
 It compiles the native probe in a temporary directory, runs it with a timeout,
 and removes the executable on exit. No additional Python dependency is required.
-Only the `doctor` and M0 `test` tasks are defined. Tasks for later milestones
-will be added with their implementations.
+The root Makefile provides `doctor`, `golden`, and `test`. Targets for later
+milestones will be added with their implementations.
 
 ## Installed environment
 
@@ -36,14 +36,15 @@ will be added with their implementations.
 | g++ compiler | 13.3.0 |
 | libitpp-dev | 4.3.1-10build1 |
 | libfftw3-dev | 3.3.10-1ubuntu3 |
+| nlohmann-json3-dev | 3.11.3-1 |
 | pkg-config: itpp / fftw3 | 4.3.1 / 3.3.10 |
 
 `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, and `MKL_NUM_THREADS` are `1`;
-`PYTHONHASHSEED` is `0`. These are scoped to mise commands, not shell-wide settings.
+`PYTHONHASHSEED` is `0`. The Makefile exports these to its child processes.
 
 The `g++` metapackage reports `4:13.2.0-7ubuntu1`; this is not the compiler
 version. The checker uses `g++ -dumpfullversion -dumpversion` to enforce 13.3.0.
-The two development packages are checked by their exact installed package
+The three development packages are checked by their exact installed package
 versions, including distribution revisions, as required by the plan.
 
 ## FFTW planning and scaling
@@ -110,6 +111,30 @@ workload; this does not affect the explicit M0 environment acceptance command.
 The apt IT++ library uses distribution build flags. Compiling the probe with
 `-O3 -march=native` does not rebuild or optimize that library; the plan's threat
 to validity remains applicable to the later C++ benchmark.
+
+## M1 review corrections
+
+The root Makefile replaces mise tasks and exports the four required environment
+variables. The checker no longer reads an `[env]` section from mise.toml and now
+requires `nlohmann-json3-dev=3.11.3-1`; that package version was verified with
+`dpkg-query` during the correction pass.
+
+The shared configuration no longer contains `workers`; it is CLI-only, including
+the golden verifier's metadata checks. Configuration fingerprints now hash the
+exact file bytes rather than a CPython-specific JSON serialization. C++ must hash
+the same bytes it parses and record the CLI worker count separately.
+
+The reference DFT now indexes twiddles by `(k * n) mod N`. Golden files were
+regenerated without changing verification tolerances. The dense transform error
+against the installed SciPy FFT decreased from approximately 1.72e-13 to
+6.28e-16. This is a reference-data correction, not a C++ profiler optimization.
+
+During this pass, `make doctor` failed in the noninteractive validation shell:
+`FAIL uv: expected 0.12.20, found 0.10.4`. A PATH-only adjustment exposed the same
+issue for Rust (`1.93.1` instead of `1.98.1`). The required versions are installed,
+but shell activation did not select them consistently. No system installation,
+shell configuration, or version pin was changed. M1 acceptance uses `make golden`
+and `make test`; a new successful doctor run is not claimed.
 
 ## Undo local setup
 

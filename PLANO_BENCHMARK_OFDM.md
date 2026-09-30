@@ -43,7 +43,9 @@ Coletado em 2026-09-30 via `lscpu -e`, `/sys/devices/cpu_{core,atom}/cpus`, `fre
 
 ### Versões fixadas
 
-Ferramentas via `mise.toml` (valores de `mise latest` em 2026-09-30):
+**mise é só gerenciador de versões de linguagem/ferramenta.** `mise.toml` contém apenas `[tools]`: sem `[env]`, sem `[tasks]`, e nenhum comando do projeto usa `mise run` ou `mise exec`. O shell tem `mise activate`. Tarefas e variáveis de ambiente ficam no `Makefile` da raiz (GNU Make 4.3, já instalado).
+
+`mise.toml` (valores de `mise latest` em 2026-09-30):
 
 ```toml
 [tools]
@@ -54,26 +56,32 @@ rust = "1.98.1"
 cmake = "4.4.3"
 ninja = "1.13.2"
 tokei = "15.0.0"
-
-[env]
-OMP_NUM_THREADS = "1"
-OPENBLAS_NUM_THREADS = "1"
-MKL_NUM_THREADS = "1"
-PYTHONHASHSEED = "0"
 ```
+
+Variáveis de ambiente de threads (`OMP_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`, `MKL_NUM_THREADS=1`, `PYTHONHASHSEED=0`) são exportadas pelo `Makefile` (`export VAR := valor`) e herdadas por tudo que os alvos lançam. O orquestrador grava os valores efetivos em `env.json` e aborta se algum divergir.
 
 Bibliotecas por lockfile commitado:
 
-- Python: `uv.lock` em `impl/python` (NumPy; PyPI mostra 2.5.3 com suporte a 3.14) e `uv.lock` separado em `tools/` (SciPy, psutil, matplotlib — nunca importados pela implementação Python).
-- Julia: `Project.toml` + `Manifest.toml` (FFTW.jl).
+- Python: `uv.lock` em `impl/python` (NumPy; PyPI mostra 2.5.3 com suporte a 3.14) e `uv.lock` separado em `tools/` (SciPy, psutil, matplotlib — nunca importados pela implementação Python). JSON via stdlib.
+- Julia: `Project.toml` + `Manifest.toml` (FFTW.jl, JSON3.jl).
 - Rust: `Cargo.lock` (`rustfft`, `num-complex`, `rand`, `rand_distr`, `rayon`, `serde`, `serde_json`).
 
 Sistema (mise não fixa bibliotecas C++; versões de `apt-cache policy` em 2026-09-30):
 
-- `g++` 13.3.0 (sistema), `libitpp-dev=4.3.1-10build1`, `libfftw3-dev=3.3.10-1ubuntu3`.
+- `g++` 13.3.0 (sistema), `libitpp-dev=4.3.1-10build1`, `libfftw3-dev=3.3.10-1ubuntu3`, `nlohmann-json3-dev=3.11.3-1` (parser JSON do C++).
 - `tools/check_system.py` aborta se as versões instaladas divergirem das fixadas.
 
-`mise.toml` também define as tarefas: `doctor`, `golden`, `test`, `ber`, `bench`, `analyze`. Todo comando do plano roda como `mise run <tarefa>`.
+Alvos do `Makefile` (todos `.PHONY`; cada marco acrescenta os seus):
+
+| Alvo | Executa |
+|---|---|
+| `make doctor` | `python tools/check_system.py` |
+| `make golden` | `python -m tools.golden.generate`, `uv run --project tools --locked python tools/theory.py`, `python tools/check_golden.py --self-test` |
+| `make test` | `uv run --project tools --locked python -m unittest discover -s tools -p 'test_*.py'` + testes de cada implementação já existente |
+| `make bench SUITE=single` / `SUITE=scaling,memory` | `uv run --project tools --locked python -m bench --suite $(SUITE)` |
+| `make analyze` | `uv run --project tools --locked python -m bench.analyze` |
+
+Build por linguagem também vira alvo (`make build-cpp`, `build-rust`, ...) quando o marco correspondente chegar.
 
 ## Contrato numérico (congelado)
 
@@ -152,7 +160,9 @@ Cada implementação ajusta a escala da sua biblioteca (NumPy `norm="ortho"`; FF
 | Python | `numpy.random.Generator(PCG64(s))` |
 | Julia | `Xoshiro(s)` |
 | Rust | `rand::rngs::SmallRng::seed_from_u64(s)` + `rand_distr::StandardNormal` |
-| C++ | RNG da IT++ se M0 provar estado independente por thread; senão `std::mt19937_64(s)`, registrado em `NOTES.md` |
+| C++ | RNG da IT++ (M0 provou estado independente por thread), semeado pelo estado completo: ver abaixo |
+
+**Semente de 64 bits na IT++:** `RNG_reset(unsigned int)` aceita só 32 bits. Truncar `s` gera colisão de sementes com probabilidade ≈ 0,39% dentro de um ponto (5.813 lotes com `max_bits = 1e9`) e ≈ 63% na curva inteira (93.008 lotes), por cálculo de aniversário sobre 2³² em 2026-09-30. Regra: preencher o estado inteiro via `RNG_set_state` com palavras consecutivas de um fluxo SplitMix64 iniciado em `s`. Teste C++ obrigatório: mesmo `s` → mesma sequência; dois `s` que diferem só nos 32 bits altos → sequências diferentes. Se `RNG_set_state` rejeitar estado arbitrário ou o teste falhar, usar `std::mt19937_64(s)` para todo o C++ e registrar em `impl/cpp/NOTES.md`. Truncar para 32 bits é proibido.
 
 - Sequências não precisam coincidir entre linguagens. A validação cruzada é estatística.
 - Resultado de cada lote depende só de `(master_seed, point_index, batch_index)` → independente do número de workers.
@@ -166,7 +176,8 @@ Cada implementação ajusta a escala da sua biblioteca (NumPy `norm="ortho"`; FF
 
 ### Validação de configuração
 
-- Rejeitar: dimensões incompatíveis, `N_cp < n_taps − 1`, `M ≠ 16`, valores não finitos, `workers < 1`, `B < 1`, `max_bits < min_batches · B · 672`, semente fora de `u64`.
+- `workers` existe **só** na CLI (`--workers`), nunca no arquivo de configuração: uma única fonte de verdade, e o mesmo arquivo serve para todos os `p` da escalabilidade.
+- Rejeitar: dimensões incompatíveis, `N_cp < n_taps − 1`, `M ≠ 16`, valores não finitos, `--workers < 1`, `B < 1`, `max_bits < min_batches · B · 672`, semente fora de `u64`.
 - Toda implementação rejeita todos os arquivos de `contract/invalid_configs/`: código de saída 2, mensagem em stderr, nenhuma saída de resultado.
 - Contadores em `u64`.
 
@@ -182,7 +193,7 @@ Códigos de saída: 0 sucesso, 1 erro de execução, 2 configuração inválida.
 
 JSON Lines validado por `contract/result.schema.json`, um registro por ponto `Eb/N0`:
 
-- `schema_version`, `impl`, `git_sha`, `mode`, `profile_id`, `config_sha256` (JSON canônico), `master_seed`, `workers`, `ebn0_db`.
+- `schema_version`, `impl`, `git_sha`, `mode`, `profile_id`, `config_sha256` (SHA-256 dos bytes do arquivo de configuração como lido do disco; nenhuma linguagem reserializa JSON), `master_seed`, `workers`, `ebn0_db`.
 - `n_batches`, `n_symbols`, `n_bits`, `n_errors`, `sum_batch_errors_sq`, `n_symbols_with_errors`, `zf_zero_count`, `status`.
 - `setup_s`, `warmup_s`, `work_s`; no modo `stages`, tempo por estágio.
 
@@ -205,7 +216,7 @@ Build:
 - Rust: `opt-level = 3`, `lto = "fat"`, `codegen-units = 1`, `panic = "abort"`, `-C target-cpu=native` em `.cargo/config.toml`.
 - Julia: `julia -O3 --startup-file=no --threads=<p>,0`; `FFTW.set_num_threads(1)`, `BLAS.set_num_threads(1)`.
 - Python: CPython padrão; start method do multiprocessing fixado explicitamente em `forkserver`.
-- FFTW: mesma flag de planejamento em C++ e Julia; M0 descobre qual a IT++ usa e a Julia copia.
+- FFTW: mesma flag de planejamento em C++ e Julia; o M0 mediu `FFTW_ESTIMATE` (flag 64) na IT++, então a Julia usa `flags=FFTW.ESTIMATE`.
 
 **Orçamento de otimização igual:** depois de passar na correção, cada implementação recebe exatamente uma rodada guiada por profiler (`perf` para C++/Rust, `Profile` para Julia, `py-spy` para Python), com mudanças registradas em `NOTES.md`.
 
@@ -215,7 +226,7 @@ Orquestrador em Python (`bench/`, ambiente de `tools/`), fixado na CPU 0.
 
 ### Modos de medição
 
-- **`perf` (primário):** carga fixa em `EbN0 = 10 dB`, `n_batches` calibrado no M0 para que C++ single-thread leve ≥ 5 s, depois congelado. Sem timers internos além de `t0`/`t1` ao redor do trabalho. Throughput = `n_batches · 256 · 672 / work_s`.
+- **`perf` (primário):** carga fixa em `EbN0 = 10 dB`, `n_batches` calibrado no fim do M2 para que C++ single-thread leve ≥ 5 s, depois congelado. Sem timers internos além de `t0`/`t1` ao redor do trabalho. Throughput = `n_batches · 256 · 672 / work_s`.
 - **`stages`:** cada estágio isolado sobre entradas pré-geradas de um lote, R repetições, mediana em ns por símbolo OFDM. Estágios: `bits`, `qam_map`, `grid`, `ifft`, `cp_add`, `channel_conv`, `awgn`, `cp_remove`, `fft`, `chan_est`, `zf`, `demap_count`. Reportar a soma dos estágios contra o `e2e`; a diferença é glue/alocação.
 - **`ber`:** curva de qualidade com critério de parada. Não é medição de desempenho.
 
@@ -248,7 +259,7 @@ Cada execução separa `setup` (config, planos, pool/threads, buffers), `warmup`
 ### Metadados (`results/<run_id>/env.json`)
 
 - CPU, mapa de núcleos, governor, `no_turbo`, energia, kernel, distro.
-- `mise ls --current --json`, SHA-256 dos lockfiles, `dpkg-query -W g++ libitpp-dev libfftw3-dev`, flags de compilação, variáveis de threads.
+- `mise ls --current --json` (só leitura de versões), SHA-256 dos lockfiles, `dpkg-query -W g++ libitpp-dev libfftw3-dev`, flags de compilação, variáveis de threads.
 - `git_sha` e flag de working tree suja, semente da ordem de execução, data.
 
 Dados brutos nunca são descartados; a agregação lê de `results/<run_id>/raw/`.
@@ -264,7 +275,7 @@ Dados brutos nunca são descartados; a agregação lê de `results/<run_id>/raw/
 
 ### Vetores dourados
 
-`tools/golden/` usa **só a stdlib do Python** (`math`, `cmath`, DFT ingênua O(N²)) e não importa nenhuma implementação competidora. Gera entradas e saídas esperadas para:
+`tools/golden/` usa **só a stdlib do Python** (`math`, `cmath`, DFT direta O(N²) com twiddles indexados por `(k·n) mod N`, nunca `exp` de `2π·k·n/N` com argumento grande) e não importa nenhuma implementação competidora. Gera entradas e saídas esperadas para:
 
 1. Mapeamento dos 16 símbolos e demapeamento incluindo empates nos limiares.
 2. Montagem da grade para um vetor fixo de 672 bits; extração de dados e pilotos.
@@ -303,7 +314,8 @@ Testes nativos por linguagem cobrem apenas o que o golden não cobre: validaçã
 ## Estrutura do repositório
 
 ```
-mise.toml
+mise.toml        só [tools]
+Makefile         tarefas e variáveis de ambiente
 contract/        perfis, schemas, golden/, invalid_configs/, theory/
 tools/           golden (stdlib), theory, check_golden, check_system (uv próprio)
 impl/cpp/        CMakeLists.txt, src/, tests/, NOTES.md
@@ -315,19 +327,35 @@ results/<run_id>/raw/, env.json
 report/
 ```
 
+## Correções pendentes do M1 (fazer antes do M2)
+
+Achados da revisão de 2026-09-30 sobre o M1 ainda não commitado:
+
+Status em 2026-09-30: itens 1–4 aplicados; arquivos dourados regenerados,
+`make golden` e `make test` passam, e duas regenerações reproduzem os 12 arquivos
+de referência byte a byte. O item 5 é concluído pelo commit do M1. Nesta revisão,
+`make doctor` falhou por seleção de `uv` antigo no PATH do shell automatizado;
+as versões fixadas permanecem intactas. Evidência em `impl/cpp/NOTES.md`.
+
+1. **mise só como gerenciador:** mover `[env]` e `[tasks]` de `mise.toml` para um `Makefile` na raiz (alvos `doctor`, `golden`, `test`, com os mesmos comandos); `check_system.py` continua exigindo as variáveis de threads (agora vindas do `Makefile`) e passa a checar `nlohmann-json3-dev=3.11.3-1`; `contract/README.md`, `tools/NOTES.md` e `impl/cpp/NOTES.md` trocam `mise run`/`mise exec` por `make <alvo>`.
+2. **`workers` fora da configuração:** remover o campo de `profile_main.json`, `config.schema.json` e dos arquivos inválidos (`zero_workers`, `worker_fraction` viram casos de CLI); `check_golden.py` recebe `--workers`. Hoje o valor existe no arquivo e na CLI, e o README manda hashear "após override da CLI".
+3. **`config_sha256` = SHA-256 dos bytes do arquivo.** A regra atual obriga C++, Julia e Rust a reproduzir byte a byte o `json.dumps` do CPython (ordem de chaves, formato de floats e expoentes). É frágil e não mede nada do benchmark.
+4. **Precisão da DFT de referência:** a DFT atual difere da FFT do NumPy em até 1,7e-13 no caso `transforms` e 2,3e-13 em `end_to_end.equalized`, margem de só ~4× sobre a tolerância de 1e-12. Com twiddles por `(k·n) mod N` o erro cai para 2,6e-15 (medido nesta revisão). Regenerar os arquivos dourados depois da troca.
+5. Commitar o M1 só depois dos itens 1–4, com os arquivos dourados regenerados.
+
 ## Marcos (um PR cada)
 
 | Marco | Entrega | Aceite |
 |---|---|---|
-| M0 Ambiente | `mise.toml`, `check_system.py`, `git init`. Descobrir: flag FFTW da IT++, segurança do RNG IT++ por thread (teste com 2 threads e mesma semente). | `mise run doctor` passa; achados em `impl/cpp/NOTES.md` |
-| M1 Contrato | perfil, schemas, `invalid_configs`, gerador golden, `theory.py`, `check_golden.py` | `mise run golden` gera arquivos; autoteste do verificador passa |
-| M2 C++/IT++ | serial + paralelo, modos `golden`/`ber`/`perf`/`stages` | golden, configs inválidas, AWGN e Rayleigh-CSI contra teoria |
+| M0 Ambiente | `mise.toml`, `check_system.py`, `git init`. Descobrir: flag FFTW da IT++, segurança do RNG IT++ por thread (teste com 2 threads e mesma semente). | `make doctor` passa; achados em `impl/cpp/NOTES.md` |
+| M1 Contrato | perfil, schemas, `invalid_configs`, gerador golden, `theory.py`, `check_golden.py` | `make golden` e `make test` passam; regenerar produz arquivos byte-idênticos |
+| M2 C++/IT++ | serial + paralelo, modos `golden`/`ber`/`perf`/`stages` | golden, configs inválidas, AWGN e Rayleigh-CSI contra teoria, teste da semente de 64 bits. Por último: calibrar `perf.n_batches` (C++ single-thread na CPU 2 ≥ 5 s), gravar no perfil e congelar antes do M3 |
 | M3–M5 Python, Rust, Julia | mesmos modos | tudo do M2 + equivalência estatística com C++ |
-| M6 Harness single-thread | orquestrador, env, pinagem, repetições, stages, tabelas | `mise run bench -- --suite single` gera `results/` completo |
-| M7 Escalabilidade e memória | E-cores 1/2/4/8, cgroup, psutil, carga longa | `mise run bench -- --suite scaling,memory` |
-| M8 Relatório | figuras e tabelas em PT-BR, metodologia, limitações, ameaças à validade | todas as figuras regeneram de `results/` com `mise run analyze` |
+| M6 Harness single-thread | orquestrador, env, pinagem, repetições, stages, tabelas | `make bench SUITE=single` gera `results/` completo |
+| M7 Escalabilidade e memória | E-cores 1/2/4/8, cgroup, psutil, carga longa | `make bench SUITE=scaling,memory` |
+| M8 Relatório | figuras e tabelas em PT-BR, metodologia, limitações, ameaças à validade | todas as figuras regeneram de `results/` com `make analyze` |
 
-Antes do M7, reportar a estimativa de tempo total de máquina (a partir da calibração do M0) e aguardar aprovação.
+Antes do M7, reportar a estimativa de tempo total de máquina (a partir da calibração do M2 e dos tempos medidos no M6) e aguardar aprovação.
 
 ## Critérios de aceite finais
 
@@ -349,5 +377,5 @@ Antes do M7, reportar a estimativa de tempo total de máquina (a partir da calib
 
 1. Somente 16-QAM na trilha principal; 64-QAM como extensão.
 2. Somente APIs padrão; versões aceleradas (Numba, JAX etc.) em trilha separada.
-3. Orçamento de máquina desconhecido: o M0 mede e o M7 espera aprovação.
+3. Orçamento de máquina desconhecido: o M2 calibra, o M6 mede e o M7 espera aprovação.
 4. Turbo desligado na rodada primária.

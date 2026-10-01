@@ -76,7 +76,7 @@ def session_environment():
     return environment
 
 
-def environment(order_seed, smoke):
+def environment(order_seed, measurement):
     if not ac_online():
         raise RuntimeError("AC power is required; connect the charger")
     maps = {
@@ -89,10 +89,12 @@ def environment(order_seed, smoke):
     if effective != THREADS:
         raise RuntimeError(f"Thread environment differs: {effective}")
     turbo = int(Path("/sys/devices/system/cpu/intel_pstate/no_turbo").read_text())
-    if not smoke and turbo != 1:
+    if measurement == "primary" and turbo != 1:
         raise RuntimeError(
             "Primary measurements require no_turbo=1; user action is required"
         )
+    if measurement == "turbo_check" and turbo != 0:
+        raise RuntimeError("Turbo confirmation requires no_turbo=0")
     locks = (
         "impl/python/uv.lock",
         "impl/rust/Cargo.lock",
@@ -101,7 +103,8 @@ def environment(order_seed, smoke):
     )
     return {
         "date_utc": datetime.now(UTC).isoformat(),
-        "smoke": smoke,
+        "smoke": measurement == "smoke",
+        "measurement": measurement,
         "git_sha": capture_text(["git", "rev-parse", "HEAD"]),
         "dirty": bool(capture_text(["git", "status", "--porcelain"])),
         "cpu": json.loads(capture_text(["lscpu", "--json"])),
@@ -159,6 +162,11 @@ def read_results(path, config_path, language, workers, mode):
         if mode == "stages":
             expected_keys.add("stage_ns_per_symbol")
         contract.object_keys(record, expected_keys, "result")
+        for name in ("schema_version", "workers", "master_seed"):
+            contract.integer(
+                record[name], name, minimum=0 if name == "master_seed" else 1
+            )
+        contract.number(record["ebn0_db"], "ebn0_db")
         for name, value in {
             "impl": language,
             "workers": workers,
@@ -189,10 +197,9 @@ def read_results(path, config_path, language, workers, mode):
             or record["n_symbols"] != record["n_batches"] * 256
         ):
             raise ValueError("Invalid batch counter relationships")
-        if (
-            record["n_errors"] > record["n_bits"]
-            or record["n_symbols_with_errors"] > record["n_symbols"]
-        ):
+        if record["n_errors"] > record["n_bits"] or record[
+            "n_symbols_with_errors"
+        ] > min(record["n_symbols"], record["n_errors"]):
             raise ValueError("Error counters exceed payload")
         for name in ("setup_s", "warmup_s", "work_s"):
             contract.number(record[name], name)
@@ -201,6 +208,15 @@ def read_results(path, config_path, language, workers, mode):
         allowed = {"target_errors", "max_bits"} if mode == "ber" else {"fixed_work"}
         if record["status"] not in allowed:
             raise ValueError("Unexpected completion status")
+        if mode == "perf" and record["n_batches"] != config["perf"]["n_batches"]:
+            raise ValueError("Fixed performance workload differs")
+        if mode == "stages" and record["n_batches"] != 1:
+            raise ValueError("Stage counters must represent one batch")
+        n, total, squares = (
+            record[k] for k in ("n_batches", "n_errors", "sum_batch_errors_sq")
+        )
+        if n * squares < total * total or squares > total * 172032:
+            raise ValueError("Inconsistent batch error moments")
         if mode == "stages":
             stages = record["stage_ns_per_symbol"]
             contract.object_keys(

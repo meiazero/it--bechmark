@@ -3,10 +3,12 @@
 import copy
 import json
 import math
+import os
 import subprocess
 import unittest
 
 import check_golden
+
 import contract
 
 
@@ -59,6 +61,9 @@ class ImplementationChecks(unittest.TestCase):
         def run(config, mode, workers=1, label="run", expected=0):
             output = directory / f"{label}.jsonl"
             output.unlink(missing_ok=True)
+            phase = directory / f"{label}.phase"
+            phase.unlink(missing_ok=True)
+            environment = {**os.environ, "BENCH_PHASE_PATH": str(phase)}
             invocation = command.copy()
             if name == "julia":
                 threads = workers if type(workers) is int and 1 <= workers <= 4 else 1
@@ -78,15 +83,19 @@ class ImplementationChecks(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 timeout=90,
+                env=environment,
             )
             self.assertEqual(result.returncode, expected, result.stderr)
             if expected:
                 self.assertTrue(result.stderr)
                 self.assertEqual(result.stdout, "")
                 self.assertFalse(output.exists())
+                self.assertFalse(phase.exists())
                 return []
             records = check_golden.read_records(output)
             self.assertTrue(records)
+            if mode != "golden":
+                self.assertEqual(phase.read_text(), "work\n")
             return records
 
         golden = run(contract.PROFILE, "golden", label="golden")

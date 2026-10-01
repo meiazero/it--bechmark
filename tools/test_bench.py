@@ -55,6 +55,10 @@ class HarnessChecks(unittest.TestCase):
             self.assertTrue(capture["rss_samples"])
             if execution["status"] == "timeout":
                 self.assertEqual(execution["suite"], "memory")
+                self.assertTrue(capture["phase_marker_observed"])
+                self.assertGreaterEqual(capture["work_observed_s"], 10)
+                self.assertGreater(capture["cpu_progress_during_work"], 0)
+                self.assertIsNotNone(capture["rss_work_delta_bytes"])
                 continue
             records = [
                 json.loads(line)

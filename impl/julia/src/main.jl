@@ -149,6 +149,15 @@ function execute(args)
             stage_timings(stage_worker, actions, splitmix(stage_seed), 10.0, 1)
         end
         warmup_s = (time_ns() - start) / 1e9
+        if haskey(ENV, "BENCH_PHASE_PATH")
+            flags = Base.Filesystem.JL_O_WRONLY | Base.Filesystem.JL_O_CREAT | Base.Filesystem.JL_O_EXCL
+            phase = Base.Filesystem.open(ENV["BENCH_PHASE_PATH"], flags, 0o600)
+            try
+                write(phase, "work\n")
+            finally
+                close(phase)
+            end
+        end
         points = args.mode == "ber" ? Float64.(args.config.ber.ebn0_db) : [10.0]
         for (index, point) in enumerate(points)
             counters = Dict(name => UInt64(0) for name in (:n_batches, :n_errors, :sum_batch_errors_sq, :n_symbols_with_errors, :zf_zero_count))

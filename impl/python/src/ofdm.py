@@ -5,6 +5,7 @@ import concurrent.futures
 import json
 import math
 import multiprocessing
+import os
 import statistics
 import subprocess
 import sys
@@ -341,6 +342,9 @@ def measure(
             )
         )
         warmup_s = time.perf_counter() - start
+        if phase_path := os.environ.get("BENCH_PHASE_PATH"):
+            with Path(phase_path).open("x") as phase:
+                phase.write("work\n")
         points = config["ber"]["ebn0_db"] if mode == "ber" else [10]
         for point_index, point in enumerate(points):
             counts = dict.fromkeys(

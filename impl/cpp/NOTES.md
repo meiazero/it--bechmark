@@ -245,3 +245,20 @@ interface and pre-exercises both directions during setup; Rust retains explicit
 plan and scratch objects. M0 verifies FFTW flags and scaling, not plan reuse or
 lifetime. M8 should observe that behavior before interpreting backend overhead.
 No unverified claim about an internal IT++ cache is made.
+
+## M7 phase boundary and independent validation
+
+The optional BENCH_PHASE_PATH marker is created exclusively after warmup and
+before the work timer. It writes no data inside timed work and cannot overwrite
+an existing marker. Shared E2E verifies this boundary, no marker/result on invalid
+input, and unchanged worker-independent counters. It supports actual sampled
+post-warmup memory baselines, not reconstruction from elapsed work durations.
+
+The fixed validation protocol reserves master_seed 1312221634 and 256 batches per
+point before outcomes, across all 16 profile points. AWGN/perfect CSI and
+Rayleigh/perfect CSI use a family of 128 simultaneous 99% batch-mean intervals;
+the main estimated-CSI profile uses 96 Bonferroni-controlled Welch comparisons.
+No incompatible case was found. The 32 AWGN cases at 16–30 dB had fewer than 100 errors
+and remain evidence_insufficient, without point approval or increasing sample
+size after outcomes. Compatibility is not equivalence. No contract, RNG draw
+order, algorithm or profiler optimization changed.

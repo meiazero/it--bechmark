@@ -47,6 +47,17 @@ def bootstrap(values, statistic=np.median):
     return tuple(map(float, np.quantile(samples, [0.025, 0.975])))
 
 
+def bootstrap_ratio(reference, target, factor=1):
+    if min(len(reference), len(target)) < 2:
+        return None, None
+    rng = np.random.default_rng(20260930)
+    a = np.median(
+        rng.choice(reference, size=(10000, len(reference)), replace=True), axis=1
+    )
+    b = np.median(rng.choice(target, size=(10000, len(target)), replace=True), axis=1)
+    return tuple(map(float, np.quantile(a / (factor * b), [0.025, 0.975])))
+
+
 def batch_interval(record, alpha=0.05):
     n, m = record["n_batches"], 172032
     if record["n_errors"] == 0:
@@ -113,6 +124,14 @@ def analyze(directory):
         median = float(np.median(values))
         lower, upper = bootstrap(values)
         bits = entries[0][1]["n_bits"]
+        reference = grouped.get((suite, core, workers, "cpp", point), [])
+        reference_times = [r["work_s"] for _, r in reference]
+        relative = float(np.median(reference_times)) / median if reference else None
+        ratio_lower, ratio_upper = (
+            (1.0, 1.0)
+            if language == "cpp" and len(values) > 1
+            else bootstrap_ratio(reference_times, values)
+        )
         rows.append(
             {
                 "suíte": {
@@ -122,7 +141,11 @@ def analyze(directory):
                     "memory": "memória",
                     "ber": "BER",
                 }[suite],
-                "núcleo": "P" if core == "p-core" else "E",
+                "núcleo": {
+                    "p-core": "P",
+                    "e-core": "E",
+                    "mixed-informative": "P e E, informativo",
+                }[core],
                 "trabalhadores": workers,
                 "linguagem": LABELS[language],
                 "EbN0_dB": point,
@@ -133,6 +156,9 @@ def analyze(directory):
                 "IC95_inferior_s": lower,
                 "IC95_superior_s": upper,
                 "vazão_Mbit_s": bits / median / 1e6,
+                "aceleração_relativa_Cpp": relative,
+                "IC95_aceleração_inferior": ratio_lower,
+                "IC95_aceleração_superior": ratio_upper,
                 "mediana_preparo_s": float(
                     np.median([r["setup_s"] for _, r in entries])
                 ),
@@ -158,6 +184,9 @@ def analyze(directory):
             "IC95_inferior_s",
             "IC95_superior_s",
             "vazão_Mbit_s",
+            "aceleração_relativa_Cpp",
+            "IC95_aceleração_inferior",
+            "IC95_aceleração_superior",
             "mediana_preparo_s",
             "mediana_aquecimento_s",
             "mediana_processo_s",
@@ -192,8 +221,12 @@ def analyze(directory):
                 ax.scatter(
                     [i] * len(rates), rates, color=COLORS[i], marker=MARKERS[i], s=65
                 )
-                median = float(np.median(rates))
-                lower, upper = bootstrap(rates)
+                times = [r["work_s"] for _, r in entries]
+                bits = entries[0][1]["n_bits"]
+                median = bits / float(np.median(times)) / 1e6
+                time_lower, time_upper = bootstrap(times)
+                lower = None if time_upper is None else bits / time_upper / 1e6
+                upper = None if time_lower is None else bits / time_lower / 1e6
                 if lower is not None:
                     ax.errorbar(
                         i,
@@ -275,19 +308,34 @@ def analyze(directory):
             if not serial:
                 continue
             t1 = float(np.median([r["work_s"] for _, r in serial]))
+            serial_times = [r["work_s"] for _, r in serial]
             points = []
             for workers in (1, 2, 4, 8):
                 entries = grouped.get(("scaling", "e-core", workers, language, 10), [])
                 if not entries:
                     continue
                 tp = float(np.median([r["work_s"] for _, r in entries]))
-                points.append((workers, t1 / tp, t1 / (workers * tp)))
+                times = [r["work_s"] for _, r in entries]
+                lower, upper = (
+                    (1.0, 1.0)
+                    if workers == 1 and len(times) > 1
+                    else bootstrap_ratio(serial_times, times)
+                )
+                points.append((workers, t1 / tp, t1 / (workers * tp), lower, upper))
                 scaling_rows.append(
                     {
                         "linguagem": LABELS[language],
                         "trabalhadores": workers,
                         "aceleração": t1 / tp,
                         "eficiência": t1 / (workers * tp),
+                        "IC95_aceleração_inferior": lower,
+                        "IC95_aceleração_superior": upper,
+                        "IC95_eficiência_inferior": None
+                        if lower is None
+                        else lower / workers,
+                        "IC95_eficiência_superior": None
+                        if upper is None
+                        else upper / workers,
                     }
                 )
             for ax, index in zip(axes, (1, 2), strict=True):
@@ -298,6 +346,19 @@ def analyze(directory):
                     marker=MARKERS[i],
                     label=LABELS[language],
                 )
+                for p in points:
+                    if p[3] is not None:
+                        divisor = 1 if index == 1 else p[0]
+                        ax.errorbar(
+                            p[0],
+                            p[index],
+                            yerr=[
+                                [p[index] - p[3] / divisor],
+                                [p[4] / divisor - p[index]],
+                            ],
+                            color=COLORS[i],
+                            capsize=3,
+                        )
         for ax, title, ylabel in zip(
             axes,
             ("Aceleração T1/Tp", "Eficiência T1/(p·Tp)"),
@@ -316,7 +377,16 @@ def analyze(directory):
         fig.suptitle(prefix + "Escalabilidade — referência na CPU 4")
         save_figure(fig, destination, "scaling")
         with (destination / "scaling.csv").open("w", newline="") as file:
-            columns = ["linguagem", "trabalhadores", "aceleração", "eficiência"]
+            columns = [
+                "linguagem",
+                "trabalhadores",
+                "aceleração",
+                "eficiência",
+                "IC95_aceleração_inferior",
+                "IC95_aceleração_superior",
+                "IC95_eficiência_inferior",
+                "IC95_eficiência_superior",
+            ]
             writer = csv.DictWriter(file, fieldnames=columns)
             writer.writeheader()
             writer.writerows(scaling_rows)
@@ -338,7 +408,13 @@ def analyze(directory):
                 label=LABELS[language],
                 linestyle=("-", "--", "-.", ":")[i],
             )
-            tail = [s for s in samples if s["elapsed_s"] >= 0.2 * capture["process_s"]]
+            work_start = capture.get("work_start_observed_s")
+            cutoff = (
+                0.2 * capture["process_s"]
+                if work_start is None
+                else work_start + 0.2 * (capture["process_s"] - work_start)
+            )
+            tail = [s for s in samples if s["elapsed_s"] >= cutoff]
             slope = (
                 stats.linregress(
                     [s["elapsed_s"] for s in tail],
@@ -361,6 +437,13 @@ def analyze(directory):
                     "crescimento_sinalizado": None
                     if smoke or slope is None
                     else slope > 1,
+                    "memória_após_aquecimento_MiB": None
+                    if capture.get("rss_after_warmup_bytes") is None
+                    else capture["rss_after_warmup_bytes"] / 2**20,
+                    "delta_trabalho_MiB": None
+                    if capture.get("rss_work_delta_bytes") is None
+                    else capture["rss_work_delta_bytes"] / 2**20,
+                    "início_trabalho_observado_s": work_start,
                 }
             )
         for ax, workers in zip(axes, (1, 8), strict=True):
@@ -384,6 +467,9 @@ def analyze(directory):
                 "pico_memória_residente_MiB",
                 "inclinação_memória_residente_MiB_min",
                 "crescimento_sinalizado",
+                "memória_após_aquecimento_MiB",
+                "delta_trabalho_MiB",
+                "início_trabalho_observado_s",
             ]
             writer = csv.DictWriter(file, fieldnames=columns)
             writer.writeheader()
@@ -466,6 +552,22 @@ def analyze(directory):
         if smoke
         else "**Carga congelada: protocolo registrado em env.json.**"
     )
+    memory_captures = [
+        captures[e["id"]] for e in manifest["executions"] if e["suite"] == "memory"
+    ]
+    marked = sum(bool(c.get("phase_marker_observed")) for c in memory_captures)
+    memory_method = (
+        f"Marcador após aquecimento observado em {marked}/{len(memory_captures)} "
+        "execuções de memória. Baseline: primeira amostra após o sinal; delta: "
+        "pico observado após o sinal menos baseline. Início observado tem a "
+        "resolução da amostragem. A duração da carga começa após o sinal."
+        if memory_captures and marked == len(memory_captures)
+        else "Não há marcador de fase em todas as capturas de memória desta "
+        "execução. Deltas exatos após aquecimento não são alegados."
+    )
+    noise_count = sum(
+        check["initial_noisy"] for check in manifest.get("noise_checks", [])
+    )
     description = f"""# OFDM: resultados para lecture
 
 Execução `{directory.name}`. Fonte bruta: `{directory}`.
@@ -506,15 +608,20 @@ Intervalos que chegam a zero ultrapassam o domínio do eixo logarítmico.
 As saídas e comandos preservam os hashes dos bytes exatos de configuração.
 Limite de tempo conserva amostras e registra estado; não inventa contagens
 para um processo interrompido. A carga curta inclui inicialização/compilação JIT;
-não valida tendência de memória residente em carga longa. Deltas após aquecimento
-ainda são estimativas no M6; exigem marcador de fase antes da medição publicada.
+não valida tendência de memória residente em carga longa quando é smoke.
+{memory_method}
 
 A diferença entre RNGs, backends FFT, versão FFTW do sistema/Julia, flags genéricas
 da IT++ e CPU híbrida limita atribuição causal à linguagem. As quatro versões
 foram escritas pelo mesmo agente de IA; ergonomia não mede programadores humanos.
 Compatibilidade estatística com teoria e entre linguagens pertence ao M7;
-otimização/calibração ao M8; medições completas ao M9. A calibração, CV, conferência
-com turbo ligado, IC de razões e ergonomia final serão verificados na Fase 2.
+otimização/calibração ao M8; medições completas ao M9.
+CV acima de 5% foi sinalizado em {noise_count} configurações. Em carga completa,
+a rodada adicional conserva os processos originais e repete todas as linguagens;
+nenhum resultado favorável substitui uma observação. IC de razões usa bootstrap
+independente das medianas; eficiência conserva a referência serial no núcleo E.
+Conferência com turbo ligado exige execução separada `TURBO=on`. Calibração,
+medições completas e ergonomia final permanecem nos respectivos marcos.
 
 Regenerar: `make analyze RUN={directory}`.
 """

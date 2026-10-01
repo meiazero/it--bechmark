@@ -1,7 +1,6 @@
 """Run one simulator inside its cgroup and retain bounded process-tree samples."""
 
 import argparse
-import json
 import os
 import signal
 import subprocess
@@ -27,14 +26,24 @@ def main():
     start = time.monotonic()
     samples = []
     status = "complete"
+    phase_path = Path(spec["phase_path"])
+    work_started = None
     with open(spec["stdout"], "w") as stdout, open(spec["stderr"], "w") as stderr:
         process = subprocess.Popen(
-            spec["command"], stdout=stdout, stderr=stderr, start_new_session=True
+            spec["command"],
+            stdout=stdout,
+            stderr=stderr,
+            start_new_session=True,
+            env={**os.environ, "BENCH_PHASE_PATH": str(phase_path)},
         )
         tree = psutil.Process(process.pid)
         while process.poll() is None:
             elapsed = time.monotonic() - start
             rss = 0
+            cpu_s = 0.0
+            if work_started is None and phase_path.exists():
+                work_started = elapsed
+            phase = "warmup" if work_started is None else "work"
             try:
                 children = [tree, *tree.children(recursive=True)]
             except psutil.NoSuchProcess:
@@ -42,17 +51,33 @@ def main():
             for child in children:
                 try:
                     rss += child.memory_info().rss
+                    cpu = child.cpu_times()
+                    cpu_s += cpu.user + cpu.system
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
-            samples.append({"elapsed_s": elapsed, "rss_bytes": rss})
-            if elapsed >= spec["timeout_s"]:
+            samples.append(
+                {"elapsed_s": elapsed, "rss_bytes": rss, "cpu_s": cpu_s, "phase": phase}
+            )
+            warmup_expired = (
+                work_started is None and elapsed >= spec["warmup_timeout_s"]
+            )
+            expired = (
+                (
+                    elapsed - work_started >= spec["timeout_s"]
+                    if work_started is not None
+                    else False
+                )
+                if spec["limit_work"]
+                else elapsed >= spec["timeout_s"]
+            )
+            if expired or warmup_expired:
                 os.killpg(process.pid, signal.SIGTERM)
                 try:
                     process.wait(timeout=2)
                 except subprocess.TimeoutExpired:
                     os.killpg(process.pid, signal.SIGKILL)
                     process.wait()
-                status = "timeout"
+                status = "warmup_timeout" if warmup_expired else "timeout"
                 break
             time.sleep(spec["sample_s"])
         process.wait()
@@ -65,19 +90,22 @@ def main():
         "rss_samples": samples,
         "rss_peak_bytes": max((s["rss_bytes"] for s in samples), default=0),
     }
-    # Internal work duration locates the final work window approximately; M7
-    # adds a phase boundary marker before published post-warmup memory deltas.
-    output = Path(spec["output"])
-    if status == "complete" and process.returncode == 0 and output.is_file():
-        records = [json.loads(line) for line in output.read_text().splitlines()]
-        work_start = result["process_s"] - sum(r["work_s"] for r in records)
-        baseline = next(
-            (s["rss_bytes"] for s in samples if s["elapsed_s"] >= work_start), None
-        )
-        result["rss_after_warmup_bytes_estimate"] = baseline
-        result["rss_work_delta_bytes_estimate"] = (
-            None if baseline is None else result["rss_peak_bytes"] - baseline
-        )
+    work_samples = [sample for sample in samples if sample["phase"] == "work"]
+    baseline = work_samples[0]["rss_bytes"] if work_samples else None
+    work_peak = max((sample["rss_bytes"] for sample in work_samples), default=None)
+    result.update(
+        phase_marker_observed=work_started is not None,
+        work_start_observed_s=work_started,
+        work_observed_s=None
+        if work_started is None
+        else result["process_s"] - work_started,
+        rss_after_warmup_bytes=baseline,
+        rss_postwarmup_peak_bytes=work_peak,
+        rss_work_delta_bytes=None if baseline is None else work_peak - baseline,
+        cpu_progress_during_work=None
+        if len(work_samples) < 2
+        else work_samples[-1]["cpu_s"] - work_samples[0]["cpu_s"],
+    )
     contract.write_json(Path(spec["capture"]), result)
     return 0 if status == "timeout" or process.returncode == 0 else 1
 

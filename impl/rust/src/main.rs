@@ -311,6 +311,14 @@ fn execute(args: Arguments, setup_start: Instant) -> Result<(), String> {
         let warm_start = Instant::now();
         batches(&pool, splitmix(master ^ 0x7761726d7570), 0, 0, 4, 10.);
         let warmup_s = warm_start.elapsed().as_secs_f64();
+        if let Some(path) = std::env::var_os("BENCH_PHASE_PATH") {
+            let mut phase = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)
+                .map_err(|e| e.to_string())?;
+            phase.write_all(b"work\n").map_err(|e| e.to_string())?;
+        }
         let points = if args.mode == "ber" {
             args.config["ber"]["ebn0_db"]
                 .as_array()

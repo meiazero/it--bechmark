@@ -1,37 +1,39 @@
-# Session state: M6 complete; M7 next
+# Session state: M7 complete; M8 profiler preflight
 
-Updated September 30, 2026. The active request continues pending milestones for
-an optimization and telecommunications lecture. M0–M6 are implemented on main;
-there is no configured remote. M5 is commit43f7cf4. M6 adds the real-process
-harness, retained environment/raw/cgroup/RSS evidence, all five smoke suites,
-and generated Portuguese CSV/PNG/SVG lecture artifacts.
+Updated September 30, 2026. The active request continues milestones for an
+optimization and telecommunications lecture. M0–M7 are implemented on main;
+there is no remote. M5 is 43f7cf4; M6 is dfe7be9; M7 completes fixed validation and
+phase/memory corrections. Each passed its acceptance and a fresh read-only Luna
+explorer review before its milestone commit.
 
-M5 passed make golden, make test (25 tests) and a fresh independent explorer
-review. M6 passed make bench SUITE=smoke, make analyze, make test (26 tests),
-and a final strengthened real E2E in149.491s. Final smoke run:
-results/20260930T232731-91208,40executions. Report:
-report/20260930T232731-91208. M6 required review corrections for Portuguese
-presentation and missing-data behavior; the final fresh Luna review approved it.
-Detailed evidence and review cycles remain in bench/NOTES.md and local logs.
+M7 acceptance: make golden; make test (29 tests in 296.658s); make validate.
+Rust formatting/Clippy and Ruff passed. Contract/golden values and lockfiles are
+unchanged by M7. perf.n_batches remains null. No profiler round or calibration
+has been performed. Full measurements and final scientific report are pending.
 
-The frozen contract and golden values are unchanged. perf.n_batches remains
-null. All implementations use retained taps for isolated channel_conv timing.
-No simulator/theory statistical validation, profiler round, calibration,
-complete benchmark or final report has yet been completed. Smoke is unpublishable.
+Independent fixed validation protocol exists before observations:
+bench/validation_protocol.json, 256batches per point, all 16 points, reserved seed
+1312221634. 12real processes produced 49,152 batches. 128theory checks and 96Welch
+pair comparisons found 0incompatibles. 32 AWGN cases at 16–30 dB had fewer than 100errors:
+evidence_insufficient, never automatically approved or recollected after outcomes.
+All 96main-profile pair comparisons are compatible; equivalence is not claimed.
+Raw protocol/results: results/validation-20260930T234334-97147. Report:
+report/validation-20260930T234334-97147. all_points_approved is false.
 
-M7 must specify fixed independent collection before observing outcomes,
-validate theory/compatibility, and replace estimated post-warmup RSS deltas
-with an explicit phase boundary. Other Phase2 harness work is listed in NOTES.
-M8 owns one profiler round per language, then calibration. M9 requires measured
-machine-time estimate, primary turbo-off data and the full control protocol.
+All four implementations emit exclusive optional phase markers after warmup,
+outside work. Memory baselines and peaks use actual post-marker samples; the
+600-second workload deadline excludes warmup. Smoke proves duration/progress
+and preserves samples; it does not prove ten-minute stability. Full-only CV
+repetition, turbo confirmation and informative 12-CPU orchestration are implemented
+but remain unmeasured. Primary results still require M8 calibration and M9 runs.
 
-The shell omits existing user bus variables; the harness supplies them from
-/run/user/1000/bus without starting a service. AC is online; turbo is on and
-its sysfs file is root-owned. perf is not installed; apt has matching kernel
-tools available. Recheck at M8 and obey the user-action stop condition.
-No system package, governor, turbo setting or persistent PATH was changed.
-Dependencies remain within the plan, retained in project lockfiles.
+The harness supplies existing /run/user/1000 bus variables locally. AC is online;
+turbo is on and root-owned. perf is absent. Matching apt packages are available:
+linux-tools-common and linux-tools-7.1.5-76070105-generic. M8 must stop for the
+user's sudo install under the plan's second stop condition. No system package,
+governor, turbo setting or persistent PATH was changed.
 
-Activate tools with eval "$(mise env -s bash)" before make in noninteractive
-Bash. Continue acceptance, fresh read-only explorer review, correction and one
-commit per milestone. No stubs or disabled tests; no performance claim from smoke.
+Resume: activate pinned tools with eval "$(mise env -s bash)" before make.
+Recheck M8 profiler tools, perform exactly one profiler round per language, fix
+and validate, then calibrate on CPU 2. Record measured machine-time estimate before
+M9. Follow the acceptance/fresh-review/one-commit loop and all stop conditions.

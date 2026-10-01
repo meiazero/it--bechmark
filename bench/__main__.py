@@ -4,6 +4,7 @@ import argparse
 import copy
 import os
 import random
+import statistics
 import subprocess
 import sys
 import time
@@ -46,6 +47,9 @@ def run_execution(directory, execution, timeout, sample):
         "stderr": str(directory / f"raw/{stem}.stderr"),
         "timeout_s": timeout,
         "sample_s": sample,
+        "phase_path": str(directory / f"raw/{stem}.phase"),
+        "limit_work": execution["suite"] == "memory",
+        "warmup_timeout_s": 90,
     }
     spec_path = directory / f"raw/{stem}.spec.json"
     contract.write_json(spec_path, spec)
@@ -72,7 +76,7 @@ def run_execution(directory, execution, timeout, sample):
         env=session_environment(),
         capture_output=True,
         text=True,
-        timeout=timeout + 15,
+        timeout=timeout + 105,
     )
     execution.update(
         external_s=time.monotonic() - started,
@@ -103,6 +107,7 @@ def run_execution(directory, execution, timeout, sample):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--suite", default="smoke")
+    parser.add_argument("--turbo-check", action="store_true")
     args = parser.parse_args()
     smoke = args.suite == "smoke"
     suites = (
@@ -113,7 +118,10 @@ def main():
     if any(s not in ("single", "stages", "scaling", "memory", "ber") for s in suites):
         raise ValueError("Unknown benchmark suite")
     order_seed = 20260930
-    env = environment(order_seed, smoke)
+    if smoke and args.turbo_check:
+        raise ValueError("Turbo confirmation requires a full suite")
+    measurement = "smoke" if smoke else "turbo_check" if args.turbo_check else "primary"
+    env = environment(order_seed, measurement)
     allowed = os.sched_getaffinity(0)
     if not set(range(12)) <= allowed:
         raise RuntimeError(
@@ -148,6 +156,48 @@ def main():
     }
     contract.write_json(directory / "manifest.json", manifest)
     rng = random.Random(order_seed)
+    manifest["noise_checks"] = []
+
+    def execute_round(suite, workers, cpus, core, repetition):
+        languages = list(LANGUAGES)
+        rng.shuffle(languages)
+        for language in languages:
+            if not ac_online():
+                raise RuntimeError("AC disconnected; connect the charger")
+            config_name = "memory-config.json" if suite == "memory" else "config.json"
+            item = {
+                "id": f"{suite}-{core}-p{workers}-r{repetition}-{language}",
+                "suite": suite,
+                "impl": language,
+                "workers": workers,
+                "cpus": cpus,
+                "core": core,
+                "repetition": repetition,
+                "mode": "stages"
+                if suite == "stages"
+                else "ber"
+                if suite == "ber"
+                else "perf",
+                "config": config_name,
+                "config_sha256": contract.config_sha256(
+                    (directory / config_name).read_bytes()
+                ),
+            }
+            timeout = (
+                (10 if smoke else 600) if suite == "memory" else 90 if smoke else 3600
+            )
+            run_execution(
+                directory,
+                item,
+                timeout,
+                1.0 if suite == "memory" and not smoke else 0.05,
+            )
+            manifest["executions"].append(item)
+            contract.write_json(directory / "manifest.json", manifest)
+            print(f"Completed {item['id']}: {item['status']}", flush=True)
+            if manifest["cooldown_s"]:
+                time.sleep(manifest["cooldown_s"])
+
     for suite in suites:
         positions = (
             [(1, [2], "p-core"), (1, [4], "e-core")]
@@ -158,53 +208,52 @@ def main():
             if suite == "memory"
             else [(1, [2], "p-core")]
         )
+        if suite == "scaling" and not smoke:
+            positions.append((12, list(range(12)), "mixed-informative"))
         repetitions = 1 if suite == "memory" else manifest["repetitions"]
         for workers, cpus, core in positions:
             for repetition in range(repetitions):
-                languages = list(LANGUAGES)
-                rng.shuffle(languages)
-                for language in languages:
-                    if not ac_online():
-                        raise RuntimeError("AC disconnected; connect the charger")
-                    config_name = (
-                        "memory-config.json" if suite == "memory" else "config.json"
-                    )
-                    item = {
-                        "id": f"{suite}-{core}-p{workers}-r{repetition}-{language}",
+                execute_round(suite, workers, cpus, core, repetition)
+            if smoke or suite not in ("single", "scaling", "stages"):
+                continue
+            checks = []
+            for language in LANGUAGES:
+                values = [
+                    r["work_s"]
+                    for r in manifest["executions"]
+                    if (r["suite"], r["workers"], r["core"], r["impl"])
+                    == (suite, workers, core, language)
+                ]
+                cv = statistics.stdev(values) / statistics.mean(values)
+                checks.append(
+                    {
                         "suite": suite,
-                        "impl": language,
                         "workers": workers,
-                        "cpus": cpus,
                         "core": core,
-                        "repetition": repetition,
-                        "mode": "stages"
-                        if suite == "stages"
-                        else "ber"
-                        if suite == "ber"
-                        else "perf",
-                        "config": config_name,
-                        "config_sha256": contract.config_sha256(
-                            (directory / config_name).read_bytes()
-                        ),
+                        "impl": language,
+                        "initial_cv": cv,
+                        "initial_noisy": cv > 0.05,
+                        "repeated": False,
                     }
-                    timeout = (
-                        (10 if smoke else 600)
-                        if suite == "memory"
-                        else 90
-                        if smoke
-                        else 3600
+                )
+            if any(check["initial_noisy"] for check in checks):
+                # Retain the original processes and repeat all language arms;
+                # no favorable repetition is selected or substituted.
+                for repetition in range(repetitions, 2 * repetitions):
+                    execute_round(suite, workers, cpus, core, repetition)
+                for check in checks:
+                    values = [
+                        r["work_s"]
+                        for r in manifest["executions"]
+                        if (r["suite"], r["workers"], r["core"], r["impl"])
+                        == (suite, workers, core, check["impl"])
+                    ]
+                    check.update(
+                        repeated=True,
+                        retained_cv=statistics.stdev(values) / statistics.mean(values),
                     )
-                    run_execution(
-                        directory,
-                        item,
-                        timeout,
-                        1.0 if suite == "memory" and not smoke else 0.05,
-                    )
-                    manifest["executions"].append(item)
-                    contract.write_json(directory / "manifest.json", manifest)
-                    print(f"Completed {item['id']}: {item['status']}", flush=True)
-                    if manifest["cooldown_s"]:
-                        time.sleep(manifest["cooldown_s"])
+            manifest["noise_checks"].extend(checks)
+            contract.write_json(directory / "manifest.json", manifest)
     manifest["completed"] = True
     contract.write_json(directory / "manifest.json", manifest)
     (ROOT / "results/LATEST").write_text(run_id + "\n")

@@ -77,7 +77,58 @@ CSV schemas and demands no-data annotations in every absent suite.
 
 The final real E2E (make bench SUITE=smoke, make analyze, and the real timeout
 projection) passed in 149.491 seconds. The actual run is
-results/20260930T232731-91208 with40 executions; generated artifacts are under
+results/20260930T232731-91208 with 40 executions; generated artifacts are under
 report/20260930T232731-91208. A fresh final read-only Luna explorer review found
 no blocker and no additional nonblocking finding beyond the recorded Phase2
 work. Ruff passed. The frozen contract is unchanged.
+
+## M7 fixed validation and corrections
+
+The artifact protocol was saved before collection:256 batches,16 points, reserved
+master_seed 1312221634. Failure boundaries were listed before writing the checks:
+wrong sample budget, adaptive stopping, bit-level rather than batch variance,
+loss of u64 moments, wrong multiplicity family, sparse automatic approval,
+and mismatched result fingerprints/counters. Unit checks compare aggregate
+inference to retained raw batch observations through SciPy's independent APIs.
+
+make validate completed all 12 real processes, 49,152 batches total. No incompatible
+case was found among 128 theory checks and 96 language-pair checks. The 32 AWGN cases
+at 16–30 dB are evidence_insufficient, not approved, and not resampled after seeing
+results. Full point approval is explicitly false. Raw data/protocol/results are
+in results/validation-20260930T234334-97147; Portuguese tables/report share that
+run id under report/. All 96 main-profile comparisons are compatible at the
+predeclared family criterion; this is not an equivalence conclusion.
+
+All four versions now emit an exclusive phase marker outside work. Memory uses
+the first sample after that marker, a peak restricted to post-warmup samples,
+and the 600-second deadline starts after warmup. A separate 90-second warmup guard
+reports failure rather than accepting it as a normal memory timeout. Sampled CPU
+progress is retained; smoke checks actual work duration and progress. Ten-minute
+memory stability remains an M9 measurement, not a smoke claim.
+
+Result checks now enforce exact perf/stages batch budgets and consistency of
+batch-square moments. Full performance suites compute CV after ten processes;
+if any arm exceeds 5%, all language arms repeat with ten fresh processes, retaining
+all original observations. Remaining noise is reported, never silently removed.
+A separate explicit TURBO=on mode enforces turbo-on metadata. A 12-CPU run is
+informative and excluded from E-core efficiency. None has been measured yet.
+
+Analysis now uses payload divided by median work time consistently, 95% bootstrap
+ratio intervals against C++ and the E-core serial baseline, and real post-warmup
+memory deltas. Single-process smoke still receives no invented bootstrap interval.
+No optimization round or calibration was performed; perf.n_batches stays null.
+
+## M7 closure and review
+
+make golden, make test (29 tests in 296.658 seconds), and make validate passed.
+A fresh independent read-only Luna explorer confirmed the fixed sampling unit,
+families, Welch degrees of freedom, sparse-point nonapproval, phase markers,
+real memory baseline, and bootstrap estimators, with no blocking finding.
+Ruff, Rust formatting, and Clippy with warnings denied passed. The strengthened
+result guards were rechecked on all 32 completed real smoke executions and the
+retained validation observations. No contract value or dependency changed.
+
+The full-only CV/turbo/12-CPU paths and ten-minute memory stability will receive
+real measured evidence in M9; smoke is not that evidence. M8 profiling is next.
+The required perf executable is absent and the matching system tools are not
+installed. The plan's user-action stop condition applies to their sudo install.

@@ -77,3 +77,20 @@ and finite, nonnegative phase durations. No timing result proves a speedup.
 An independent read-only explorer review found no blocker. Rust formatting and
 Clippy with warnings denied passed; Python and shared E2E Ruff checks passed.
 The frozen contract and all lockfiles remain byte-unchanged.
+
+## M7 phase boundary and independent validation
+
+The optional BENCH_PHASE_PATH marker is created exclusively after warmup and
+before the work timer. It writes no data inside timed work and cannot overwrite
+an existing marker. Shared E2E verifies this boundary, no marker/result on invalid
+input, and unchanged worker-independent counters. It supports actual sampled
+post-warmup memory baselines, not reconstruction from elapsed work durations.
+
+The fixed validation protocol reserves master_seed 1312221634 and 256 batches per
+point before outcomes, across all 16 profile points. AWGN/perfect CSI and
+Rayleigh/perfect CSI use a family of 128 simultaneous 99% batch-mean intervals;
+the main estimated-CSI profile uses 96 Bonferroni-controlled Welch comparisons.
+No incompatible case was found. The 32 AWGN cases at 16–30 dB had fewer than 100 errors
+and remain evidence_insufficient, without point approval or increasing sample
+size after outcomes. Compatibility is not equivalence. No contract, RNG draw
+order, algorithm or profiler optimization changed.

@@ -3,6 +3,8 @@
 #include <charconv>
 #include <chrono>
 #include <condition_variable>
+#include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -224,6 +226,13 @@ int main(int argc, char** argv) {
             U64 seed = config["master_seed"];
             pool.run(splitmix(seed ^ 0x7761726d7570ULL), 0, 0, 4, 10);
             double warmup_s = seconds(warm_start);
+            if (const char* path = std::getenv("BENCH_PHASE_PATH")) {
+                FILE* phase = std::fopen(path, "wx");
+                if (!phase) throw std::runtime_error("Cannot create phase marker");
+                const bool written = std::fputs("work\n", phase) >= 0;
+                const bool closed = std::fclose(phase) == 0;
+                if (!written || !closed) throw std::runtime_error("Cannot write phase marker");
+            }
             Json points = mode == "ber" ? config["ber"]["ebn0_db"] : Json::array({10});
             for (std::size_t p = 0; p < points.size(); ++p) {
                 double point = points[p];

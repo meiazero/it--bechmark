@@ -6,7 +6,7 @@ export PYTHONHASHSEED := 0
 .PHONY: doctor golden test build-cpp test-cpp build-python test-python
 .PHONY: build-rust test-rust
 .PHONY: build-julia test-julia
-.PHONY: bench analyze test-bench
+.PHONY: bench analyze test-bench validate
 
 doctor:
 	python tools/check_system.py
@@ -45,10 +45,13 @@ test-julia: build-julia
 	uv run --project tools --locked python -m unittest discover -s tools -p test_implementations.py -k julia -v
 
 bench: build-cpp build-python build-rust build-julia
-	uv run --project tools --locked python -m bench --suite $(or $(SUITE),smoke)
+	uv run --project tools --locked python -m bench --suite $(or $(SUITE),smoke) $(if $(filter on,$(TURBO)),--turbo-check)
 
 analyze:
 	uv run --project tools --locked python -m bench.analyze $(if $(RUN),--run $(RUN))
 
 test-bench: build-cpp build-python build-rust build-julia
 	uv run --project tools --locked python -m unittest discover -s tools -p test_bench.py -v
+
+validate: build-cpp build-python build-rust build-julia
+	uv run --project tools --locked python -m bench.validate

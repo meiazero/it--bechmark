@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "fixed_batches": 256,
+  "master_seed": 1312221634,
+  "points_source": "contract/profile_main.json:ber.ebn0_db",
+  "theory_family_alpha": 0.01,
+  "pair_family_alpha": 0.01,
+  "minimum_errors_for_theory": 100,
+  "scenarios": [
+    {"id": "awgn-perfect", "channel": "awgn", "csi": "perfect"},
+    {"id": "rayleigh-perfect", "channel": "rayleigh", "csi": "perfect"},
+    {"id": "rayleigh-estimated", "channel": "rayleigh", "csi": "estimated"}
+  ],
+  "sparse_policy": "Record evidence_insufficient; never approve that point or change N after observing outcomes",
+  "interpretation": "Compatibility is not equivalence; no equivalence margin is defined"
+}

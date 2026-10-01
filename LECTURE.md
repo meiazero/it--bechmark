@@ -2,8 +2,9 @@
 
 This lecture uses the C++/IT++, Python/NumPy, Rust, and Julia simulators from
 M2–M5. The M6 smoke harness generates Portuguese figures and tables for all four
-languages. Statistical simulator validation, profiler rounds, and the complete
-benchmark remain future milestones. Smoke timings demonstrate execution only;
+languages. M7 adds fixed-sample statistical validation; sparse points retain an
+insufficient-evidence status. Profiler rounds and the complete benchmark remain
+future milestones. Smoke timings demonstrate execution only;
 primary performance conclusions require M8–M9.
 
 ## 1. Start with an executable numerical model
@@ -145,8 +146,12 @@ scaling. Changing the contract to make a version faster invalidates the comparis
 Golden agreement checks mathematical operators against an independent stdlib
 oracle. E2E agreement checks execution, metadata, stopping, invalid inputs,
 and worker determinism. Neither establishes agreement with theoretical BER
-or a performance advantage. The planned simulator/theory comparisons have
-not been executed yet.
+or a performance advantage. M7's independent collection uses 256 fixed batches
+at every one of the 16 profile points. Its 128 simultaneous theory checks and
+96 Welch pair comparisons found no incompatible case. The 32 AWGN cases at
+16–30 dB had fewer than 100 errors and remain insufficient, without approval
+or extra collection after outcomes. The generated tables are under the validation
+run identified by `results/VALIDATION_LATEST`; its protocol was saved first.
 
 Within a channel realization, bit errors can be correlated. Batch error rates,
 not individual bits, are the sampling units used for uncertainty.
@@ -164,8 +169,8 @@ use the bound below. The shared counters support this calculation without
 assuming independent bit errors. The adaptive
 BER stopping rule makes observed batch count depend on errors; ordinary fixed
 sample t intervals do not automatically retain their coverage under that rule.
-M7 therefore needs an independent fixed-batch validation collection specified
-before outcomes are observed, as described in the revised plan.
+M7 uses an independent fixed-batch validation collection specified before
+outcomes are observed in `bench/validation_protocol.json`.
 
 Welch's t-test asks whether means differ. A large p-value does not demonstrate
 equivalence. See the [SciPy test definition](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.ttest_ind.html).

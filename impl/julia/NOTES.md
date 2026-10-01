@@ -75,3 +75,43 @@ No incompatible case was found. The 32 AWGN cases at 16–30 dB had fewer than 1
 and remain evidence_insufficient, without point approval or increasing sample
 size after outcomes. Compatibility is not equivalence. No contract, RNG draw
 order, algorithm or profiler optimization changed.
+
+## M8 profiler-guided round
+
+One stdlib Profile round used a 0.01-second delay, 4,096 batches, one worker,
+CPU 2 and turbo on. `bench/profile_julia.jl` first executes the same CLI workload
+outside Profile to compile its dispatcher, clears samples, and profiles one
+subsequent execute call. That includes its small setup/warmup phases as well as
+work. It asserts unchanged integer counters and nonempty samples; raw instruction
+pointers, resolved frames, flat report, config and command are retained in
+`results/profiling-20261001T002110-111626`. No second profiler round was performed.
+
+The profile has 1,442 snapshots. GenericMemory has 489 self snapshots (33.91%),
+while backward/forward transform source lines occur in 132/100 snapshots.
+Inclusive frame counts overlap and must not be added as a stage decomposition.
+The FFT wrapper now scales its newly allocated result in place, removing the
+second vector per signal transform. It still returns an independent output,
+so retained stage fixtures and golden signals cannot alias a reused FFT buffer.
+Xoshiro draw order, FFTW.ESTIMATE plans, scale and contract are unchanged.
+Symbol-sized temporaries remain; no dependency or global bounds override was added.
+
+### M8 numerical acceptance
+
+make test passed 29 E2E/contract/inference checks in 292.222 seconds. Independent
+golden signals pass. All 64 retained real before/after counter records agree,
+including each implementation's 4,096-batch load. make validate recollected the
+unchanged fixed protocol: zero incompatible cases, 32 insufficient sparse AWGN
+points, and no equivalence claim. Raw validation is
+results/validation-20261001T003344-116836. The shared profile freezes only the
+planned perf batch count at 2048; C++ CPU-2 calibration measured 8.856117789 s.
+All other contract values and dependency lockfiles remain unchanged.
+
+### M8 review corrections
+
+The review corrected stale calibration prose without changing schema constraints.
+The shared pre-calibration test now explicitly sets its null fixture after the
+main profile is frozen. The profiling launcher did not pin its own CPU despite
+recording CPU 0; original observations and metadata-corrections.json preserve
+that provenance defect. Each profiler/simulator was correctly pinned to CPU 2.
+No profiler round was repeated. A CPU-0-pinned launcher verified the same frozen
+C++ workload at 7.842908383 s; bench/NOTES.md records the full correction cycle.

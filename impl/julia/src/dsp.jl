@@ -85,10 +85,18 @@ function Worker(geometry)
     return Worker(geometry, plan_fft(buffer; flags=FFTW.ESTIMATE),
         plan_bfft(buffer; flags=FFTW.ESTIMATE), Xoshiro(0))
 end
-# ponytail: symbol-sized temporaries keep the teaching path readable; reuse buffers
-# only when the single M8 profiler round identifies allocation as a hotspot.
-forward(w, values) = (w.forward * values) ./ sqrt(FFT_SIZE)
-backward(w, values) = (w.backward * values) ./ sqrt(FFT_SIZE)
+# ponytail: symbol-sized temporaries keep the teaching path readable after M8;
+# full worker buffer reuse belongs to a separate optimized benchmark revision.
+function forward(w, values)
+    output = w.forward * values
+    output ./= sqrt(FFT_SIZE)
+    return output
+end
+function backward(w, values)
+    output = w.backward * values
+    output ./= sqrt(FFT_SIZE)
+    return output
+end
 add_cp(values) = vcat(values[end-CP_LENGTH+1:end], values)
 remove_cp(values) = values[CP_LENGTH+1:CP_LENGTH+FFT_SIZE]
 bits(w) = rand(w.rng, UInt8, BITS_PER_SYMBOL) .& 0x01

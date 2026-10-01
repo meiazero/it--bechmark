@@ -16,6 +16,8 @@
 namespace {
 unsigned forward_flags = std::numeric_limits<unsigned>::max();
 unsigned backward_flags = std::numeric_limits<unsigned>::max();
+unsigned forward_plans = 0;
+unsigned backward_plans = 0;
 constexpr unsigned seed = 4257;
 constexpr unsigned reseed = 9182;
 constexpr int sample_count = 64;
@@ -69,6 +71,7 @@ extern "C" fftw_plan fftw_plan_dft_1d(int size, fftw_complex* input,
     }
     if (size == 256) {
         (sign == FFTW_FORWARD ? forward_flags : backward_flags) = flags;
+        ++(sign == FFTW_FORWARD ? forward_plans : backward_plans);
     }
     return planner(size, input, output, sign, flags);
 }
@@ -89,6 +92,19 @@ int main() {
         backward_flags == std::numeric_limits<unsigned>::max()) {
         std::cerr << "FFTW planner observation or FFT scaling check failed\n";
         return 1;
+    }
+
+    // Failure boundaries: later transforms change scale or repeatedly plan.
+    // Count actual planner calls; do not infer reuse from absent CPU samples.
+    for (int repetition = 0; repetition < 100; ++repetition) {
+        const auto repeated_spectrum = itpp::fft(impulse);
+        const auto repeated_time = itpp::ifft(repeated_spectrum);
+        for (int index = 0; index < 256; ++index) {
+            if (std::abs(repeated_time[index] - impulse[index]) > 1e-12) {
+                std::cerr << "Repeated FFT scaling check failed\n";
+                return 1;
+            }
+        }
     }
 
     const auto expected = serial_samples(false);
@@ -132,6 +148,9 @@ int main() {
     std::cout << std::boolalpha
               << "{\"fftw_forward_flags\":" << forward_flags
               << ",\"fftw_backward_flags\":" << backward_flags
+              << ",\"fftw_forward_plans\":" << forward_plans
+              << ",\"fftw_backward_plans\":" << backward_plans
+              << ",\"fft_calls_per_direction\":101"
               << ",\"fft_scaling_max_abs_error\":" << scaling_error
               << ",\"rng_same_seed_two_threads_match\":" << same_seed_match
               << ",\"rng_cross_thread_reseed_independent\":" << reseed_independent

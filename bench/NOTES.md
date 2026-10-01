@@ -132,3 +132,111 @@ The full-only CV/turbo/12-CPU paths and ten-minute memory stability will receive
 real measured evidence in M9; smoke is not that evidence. M8 profiling is next.
 The required perf executable is absent and the matching system tools are not
 installed. The plan's user-action stop condition applies to their sudo install.
+
+## M8 profiling, calibration, and measured budget
+
+One profiler round per language is retained at
+results/profiling-20261001T002110-111626, with derived 4,096-batch config,
+environment, actual command arrays, stdout/stderr, raw profiles and counters.
+Native rounds use perf 7.1.5 cpu-clock:u at 99 Hz with DWARF stacks; Python uses
+isolated uvx py-spy 0.4.2 native/subprocess stacks; Julia uses stdlib Profile.
+A profiler preflight sampled /usr/bin/true, without an OFDM workload. It is not
+a second implementation profiling round. Per-language findings and deliberate
+lecture ceilings are logged in each implementation's NOTES.md. The Python
+shutdown error is preserved with complete sampled data and simulator output;
+no rerun was used to hide it. No unlisted dependency or lockfile was changed.
+
+The existing E2E passed 29 checks in 292.222 seconds after optimization. Retained
+before/after integer counters match in 64 real records, including 4,096-batch
+perf loads for all four languages. Golden intermediate signals remain checked
+against the independent oracle, not against another implementation. Neither
+instrumented timings nor one unprofiled observation establish an optimization
+speedup. The comparison regenerates with the retained verify_numeric.py.
+
+Calibration used one C++ worker on CPU 2 after other test workloads completed.
+The first candidate, 2,048 batches, measured work_s=8.856117789 with turbo on.
+The raw config/result, command, environment and frozen fingerprint are under
+results/profiling-20261001T002110-111626/calibration. This exceeds the required
+5 seconds. Only perf.n_batches changes from null to 2048 in the contract; all
+physical values, schemas, golden vectors, seeds and numeric tolerances remain
+unchanged. This is the M8 calibration explicitly required by the plan, not a
+contract deviation. Primary measurements still require turbo off.
+
+The post-freeze contract suite exposed a pre-calibration test that depended on
+the live profile retaining null. Its fixture now explicitly sets null before
+checking that boundary, then checks the calibrated and diagnostic-CSI cases.
+No production validation was weakened. All 18 contract checks pass in 2.793 s.
+Ruff also found an existing import-order issue in that test; imports were sorted.
+Ruff, Rust formatting/Clippy with warnings denied, make doctor and make golden
+pass. The FFT interposition probe directly observes one plan per direction in
+101 transform calls for the installed IT++ binary; absent CPU samples alone
+would not prove that lifetime.
+
+### Budget before M9
+
+The retained machine-estimate.json records the extrapolation and its inputs:
+M6 smoke results/20260930T232731-91208 for single/scaling/stages timings,
+M7 phase-marked smoke results/20260930T235156-99613 for memory startup, and
+M8 calibration for the frozen batch count. Work scales by 2048/4; observed
+non-work launch time is retained. The unmeasured mixed 12-CPU arm uses the
+8-worker time only as a budget proxy, never as measured mixed-core performance.
+
+Required primary single/scaling/memory suites project 227 minutes: 280 fresh
+perf processes, eight 600-second memory windows, 96 minutes of cooldown, and
+about 51 minutes of projected process work/setup. Supplementary full stages
+project 15 minutes. Primary plus stages therefore projects 242 minutes.
+If every CV arm triggers its one retained repeat, the required primary suites
+project 371 minutes before supplementary stages. A turbo-on single suite adds
+44 projected minutes without noise repeats. Fixed-budget M8 validation supplies
+the quality curves; it is not a performance suite or adaptive stopping evidence.
+
+These are planning estimates, not runtime upper bounds. Four-batch smoke has
+large scheduling noise; extrapolation may overstate it. Turbo-off frequencies,
+thermal behavior and CV repeats can increase time. Reporting/ergonomics work
+is additional. No primary timing, ten-minute memory outcome or final ranking
+is claimed before M9. Continue the milestone loop without requesting a budget.
+
+### M8 statistical acceptance
+
+make validate collected a new independent run at
+results/validation-20261001T003344-116836 using the unchanged predeclared protocol:
+12 processes, 49,152 fixed batches, 128 simultaneous theory checks and 96 Welch
+pair comparisons. It found zero incompatible cases and retained 32 sparse AWGN
+points as evidence_insufficient. No sample-size increase or point approval was
+made. The corresponding Portuguese report regenerated successfully. The earlier
+M7 run remains available; outcomes are not substituted or pooled after inspection.
+
+### M8 review cycle 1 and provenance correction
+
+Fresh read-only Luna review found no blocker and three stale calibration texts:
+contract/config.schema.json's description, contract/README.md, and tools/NOTES.md.
+They now describe the frozen 2048-batch profile and retain null only for derived
+uncalibrated inputs. Only descriptive schema text changed; validation constraints,
+numeric fields and tolerances did not. The Julia profiler wrapper will be staged.
+
+A local audit found that manual profiler/calibration launchers had not pinned
+themselves to CPU 0, although every simulator/profiler command pins CPU 2.
+Their common environment record incorrectly claimed orchestrator_cpu=0. The
+original records are preserved with metadata-corrections.json in the profiling
+and calibration directories, explicitly marking the original launcher affinity
+as unrecorded. This is a provenance deviation for diagnostic profiling/calibration,
+not an accepted primary run. No profiler round was repeated.
+
+The already frozen 2048-batch C++ workload was then verified with an explicitly
+CPU-0-pinned launcher and CPU-2-pinned simulator. It measured 7.842908383 seconds,
+still above five, and retained its raw config fingerprint, result, environment,
+command and assertion artifact under calibration/pinned-verification.*. The
+workload count did not change. Full benchmark orchestration pins CPU 0 before
+launching any simulator. Recomputed fixed-budget validation from the retained
+M8 observations and the golden/contract checks pass after these documentation
+corrections; no statistical data were recollected or pooled after outcomes.
+
+### M8 review cycle 2 and closure
+
+A second fresh read-only Luna explorer review found no blocking finding or
+unresolved correction. It verified the post-freeze contract/golden/validation
+artifacts, one-round profile budget, unchanged numeric counters, pinned workload
+verification and explicit provenance corrections. It executed no new profiling
+or primary measurement. M8 closes on main with one feat(m8) commit. M9 requires
+the human-only no_turbo write when its current value is zero; no primary suite
+is launched with turbo on.

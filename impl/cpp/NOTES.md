@@ -262,3 +262,46 @@ No incompatible case was found. The 32 AWGN cases at 16–30 dB had fewer than 1
 and remain evidence_insufficient, without point approval or increasing sample
 size after outcomes. Compatibility is not equivalence. No contract, RNG draw
 order, algorithm or profiler optimization changed.
+
+## M8 profiler-guided round
+
+One perf 7.1.5 round used cpu-clock:u at 99 Hz with DWARF call stacks,
+4,096 batches, one worker, CPU 2, and turbo on. The raw data, command,
+environment, derived config, result and flat report are retained in
+`results/profiling-20261001T002110-111626`. There were 1,693 samples. Self costs included normal draws
+33.85%, direct convolution 13.23%, and demapping 6.73%. Sampling proportions
+are diagnostics, not a before/after speedup measurement.
+
+Convolution now visits contiguous samples for each tap. Each output still sums
+in ascending tap order; the RNG sequence, normalization, receive window and
+contract are unchanged. The standard normal generator remains unchanged:
+replacing it would conflate optimization with the documented RNG difference.
+Symbol-sized temporary vectors remain for the lecture's readable pipeline.
+
+No FFTW planner symbol appeared among sampled hotspots. Absence of samples
+cannot establish plan reuse, so the existing interposition probe now counts
+actual planner calls across 101 transforms per direction and checks repeated
+impulse recovery. On this installed binary, one forward and one backward plan
+were observed. This establishes reuse for this process, size and call sequence;
+it does not prove all library interfaces or concurrent plan lifetimes.
+
+### M8 numerical acceptance
+
+make test passed 29 E2E/contract/inference checks in 292.222 seconds. Independent
+golden signals pass. All 64 retained real before/after counter records agree,
+including each implementation's 4,096-batch load. make validate recollected the
+unchanged fixed protocol: zero incompatible cases, 32 insufficient sparse AWGN
+points, and no equivalence claim. Raw validation is
+results/validation-20261001T003344-116836. The shared profile freezes only the
+planned perf batch count at 2048; C++ CPU-2 calibration measured 8.856117789 s.
+All other contract values and dependency lockfiles remain unchanged.
+
+### M8 review corrections
+
+The review corrected stale calibration prose without changing schema constraints.
+The shared pre-calibration test now explicitly sets its null fixture after the
+main profile is frozen. The profiling launcher did not pin its own CPU despite
+recording CPU 0; original observations and metadata-corrections.json preserve
+that provenance defect. Each profiler/simulator was correctly pinned to CPU 2.
+No profiler round was repeated. A CPU-0-pinned launcher verified the same frozen
+C++ workload at 7.842908383 s; bench/NOTES.md records the full correction cycle.

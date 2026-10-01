@@ -3,9 +3,9 @@
 This lecture uses the C++/IT++, Python/NumPy, Rust, and Julia simulators from
 M2–M5. The M6 smoke harness generates Portuguese figures and tables for all four
 languages. M7 adds fixed-sample statistical validation; sparse points retain an
-insufficient-evidence status. Profiler rounds and the complete benchmark remain
-future milestones. Smoke timings demonstrate execution only;
-primary performance conclusions require M8–M9.
+insufficient-evidence status. M8 records one profiler round per language and
+freezes the calibrated workload at 2,048 batches. Complete primary measurements
+remain M9 work. Smoke timings demonstrate execution only.
 
 ## 1. Start with an executable numerical model
 
@@ -52,7 +52,8 @@ matching the planning flag observed in IT++.
 The IT++ scaling and planning flags are established by the local M0 probe.
 C++ delegates plan lifetime to the IT++ function interface and pre-exercises
 both directions during setup; Rust retains explicit plans and scratch. M0
-does not establish plan reuse, which M8 should inspect before timing claims. NumPy's
+does not establish plan reuse. M8's interposition probe observes one plan per
+direction across 101 transforms in this installed binary and process. NumPy's
 [normalization documentation](https://numpy.org/doc/stable/reference/routines.fft.html#normalization)
 explains `ortho`. Neither convention licenses rescaling the channel gains.
 
@@ -137,9 +138,29 @@ $$R_b=\frac{n_{batches}\,256\,672}{t_{work}}.$$
 
 Compare the same frozen workload, core class, worker count, thread limits,
 and turbo state. Separate setup, warmup, work, and external process time.
-M8 calibrates workload; M9 collects independent process repetitions and memory.
+M8 measured 8.856 seconds of C++ work on CPU 2 for the frozen 2,048 batches,
+with turbo on. That calibration is a workload check; primary performance uses
+turbo off. M9 collects independent process repetitions and memory.
 A P-core single-worker run cannot be the efficiency denominator for E-core
 scaling. Changing the contract to make a version faster invalidates the comparison.
+
+M8's profiler artifacts are under
+`results/profiling-20261001T002110-111626`. Read the commands and environment
+before the flat reports. Native sampling identified convolution as a CPU cost;
+C++ and Rust now visit contiguous samples for each tap while preserving tap
+accumulation order. NumPy reuses one multiplication workspace with `out=`.
+Julia scales the newly allocated FFT result in place, retaining independent
+stage inputs. This keeps the same signal chain visible in every implementation.
+The per-language NOTES.md files record sample counts and limitations, including
+the Python profiler's shutdown error after complete samples were saved.
+
+For a bounded exercise, compare the convolution loops, identify which arrays are
+allocated, and explain why each sample still receives taps in the same order.
+The retained `numeric-comparison.json` verifies 64 unchanged integer-counter
+records; independent golden vectors check intermediate signals. These checks
+establish correctness of the revised path. A speedup still requires repeated
+measurements of both versions under the same protocol; M8 does not supply that
+before/after experiment.
 
 ## 5. Separate verification from scientific inference
 

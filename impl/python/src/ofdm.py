@@ -69,10 +69,14 @@ def demap(values: np.ndarray) -> np.ndarray:
 def convolve(values: np.ndarray, taps: np.ndarray) -> np.ndarray:
     """Keep the causal symbol prefix; the channel tail is outside the receive window."""
     output = np.zeros_like(values)
+    product = np.empty_like(values)
     for delay in range(taps.shape[-1]):
-        output[..., delay:] += (
-            taps[..., delay, None] * values[..., : values.shape[-1] - delay]
+        np.multiply(
+            taps[..., delay, None],
+            values[..., : values.shape[-1] - delay],
+            out=product[..., delay:],
         )
+        np.add(output[..., delay:], product[..., delay:], out=output[..., delay:])
     return output
 
 

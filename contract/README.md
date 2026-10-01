@@ -27,11 +27,13 @@ The frozen profile rejects all incompatible dimensions, including `N_cp < 7`.
 JSON Schema cannot express all cross-field conditions. Native validators must
 also enforce `max_bits >= min_batches * B * 672`, enough u64 headroom for the final
 whole batch, and the selected mode's restrictions. Perfect CSI is diagnostic and
-is rejected in `perf` and `stages` modes. `perf.n_batches` is intentionally null:
-M8 measures the profiled C++ workload before filling and freezing it; until then,
-tests and the M6 smoke suite use a derived copy outside `contract/`. Null is
-valid for `golden` and `ber`, and invalid for `perf` execution. No performance
-calibration has been invented.
+is rejected in `perf` and `stages` modes. M8 freezes `perf.n_batches` at 2048
+after C++ single-worker calibration on CPU 2 exceeded five seconds of work.
+Tests and smoke still use derived copies outside `contract/`. An uncalibrated
+derived configuration may contain null, valid for `golden` and `ber` and invalid
+for `perf` execution. Calibration artifacts and metadata corrections are retained
+under `results/profiling-20261001T002110-111626/calibration/`; primary performance
+measurement remains M9 work.
 
 Run the reference configuration checks with:
 

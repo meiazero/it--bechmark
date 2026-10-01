@@ -8,12 +8,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scipy import fft
-from tools.golden import reference
-
 import check_golden
-import contract
 import theory
+from scipy import fft
+
+import contract
+from tools.golden import reference
 
 
 class ConfigurationChecks(unittest.TestCase):
@@ -59,6 +59,8 @@ class ConfigurationChecks(unittest.TestCase):
         self.profile.update(master_seed=contract.U64_MAX, channel="awgn", csi="perfect")
         self.profile["ber"].update(target_errors=2000, ebn0_db=[-2, 4.5])
         contract.validate_config(self.profile, "ber")
+        # Exercise the pre-calibration boundary even after M8 freezes the profile.
+        self.profile["perf"]["n_batches"] = None
         with self.assertRaisesRegex(ValueError, "awaits M8"):
             contract.validate_config(self.profile, "perf")
         self.profile["perf"]["n_batches"] = 10

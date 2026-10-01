@@ -80,15 +80,14 @@ pub fn remove_cp(values: &[Complex]) -> Values {
     values[CP_LENGTH..SAMPLES_WITH_CP].to_vec()
 }
 pub fn convolve(values: &[Complex], taps: &[Complex]) -> Values {
-    (0..values.len())
-        .map(|n| {
-            taps.iter()
-                .enumerate()
-                .take(n + 1)
-                .map(|(l, tap)| *tap * values[n - l])
-                .sum()
-        })
-        .collect()
+    let mut output = vec![Complex::new(0., 0.); values.len()];
+    // Each tap visits contiguous samples; each sample still sums taps in order.
+    for (delay, &tap) in taps.iter().take(values.len()).enumerate() {
+        for (received, &transmitted) in output[delay..].iter_mut().zip(values.iter()) {
+            *received += tap * transmitted;
+        }
+    }
+    output
 }
 pub fn response(taps: &[Complex]) -> Values {
     // Channel gains use the unscaled tap DFT, unlike the unitary signal FFTs.
@@ -261,8 +260,8 @@ impl Counts {
         }
     }
 }
-// ponytail: allocate symbol-sized DSP vectors first; M8 may replace only
-// allocation hotspots identified by the single permitted profiler round.
+// ponytail: retain readable symbol-sized vectors after M8; full worker buffer
+// reuse belongs to a separate optimized benchmark revision.
 pub struct Worker {
     pub config: Arc<Config>,
     rng: SmallRng,

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "OFDM benchmark configuration",
-  "description": "Fixed main-profile geometry; see README.md for semantic constraints that JSON Schema cannot express. Null perf.n_batches is allowed until M2 calibration, and is rejected in perf mode.",
+  "description": "Fixed main-profile geometry; see README.md for semantic constraints that JSON Schema cannot express. M8 freezes main-profile perf.n_batches at 2048. Null remains allowed in an uncalibrated derived configuration and is rejected in perf mode.",
   "type": "object",
   "additionalProperties": false,
   "required": [

@@ -462,7 +462,7 @@
   },
   "perf": {
     "ebn0_db": 10,
-    "n_batches": null
+    "n_batches": 2048
   },
   "stages": {
     "repetitions": 100

@@ -88,3 +88,50 @@ No incompatible case was found. The 32 AWGN cases at 16–30 dB had fewer than 1
 and remain evidence_insufficient, without point approval or increasing sample
 size after outcomes. Compatibility is not equivalence. No contract, RNG draw
 order, algorithm or profiler optimization changed.
+
+## M8 profiler-guided round
+
+One py-spy 0.4.2 round used native and subprocess stacks at 100 Hz,
+4,096 batches, one worker, CPU 2, and turbo on. py-spy is explicitly named in
+the plan and ran through an isolated uvx environment, without changing any
+project dependency or lockfile. The raw speedscope data, command, streams,
+environment, derived config and complete result are retained in `results/profiling-20261001T002110-111626`.
+The productive child has 4,008 samples; the complete file has 4,037.
+Convolution has 948 productive-child samples (23.65%); AWGN has 943 (23.53%).
+These are nearest Python-frame classifications of native samples, not exclusive
+native-symbol costs or performance measurements.
+
+py-spy returned exit 1 with `No child process (os error 10)` after reporting
+that it wrote all 4,037 samples, with one sampling error. The simulator completed
+all 4,096 batches and its output passed the strict result boundary. Both the
+failure and complete artifacts are retained; the round was not rerun.
+The upstream [shutdown race report](https://github.com/benfred/py-spy/issues/759)
+describes the same symptom; that is supporting context, not proof of the exact
+local cause. Version 0.4.2's [release notes](https://github.com/benfred/py-spy/releases/tag/v0.4.2)
+confirm Python 3.14 support.
+
+Direct convolution reuses one product array through NumPy multiply/add `out=`.
+The eight tap passes retain their order. PCG64, batched shapes and all numeric
+conventions are unchanged. The workspace is batch-sized and local to one call;
+full cross-stage worker buffer reuse remains outside this lecture revision.
+
+### M8 numerical acceptance
+
+make test passed 29 E2E/contract/inference checks in 292.222 seconds. Independent
+golden signals pass. All 64 retained real before/after counter records agree,
+including each implementation's 4,096-batch load. make validate recollected the
+unchanged fixed protocol: zero incompatible cases, 32 insufficient sparse AWGN
+points, and no equivalence claim. Raw validation is
+results/validation-20261001T003344-116836. The shared profile freezes only the
+planned perf batch count at 2048; C++ CPU-2 calibration measured 8.856117789 s.
+All other contract values and dependency lockfiles remain unchanged.
+
+### M8 review corrections
+
+The review corrected stale calibration prose without changing schema constraints.
+The shared pre-calibration test now explicitly sets its null fixture after the
+main profile is frozen. The profiling launcher did not pin its own CPU despite
+recording CPU 0; original observations and metadata-corrections.json preserve
+that provenance defect. Each profiler/simulator was correctly pinned to CPU 2.
+No profiler round was repeated. A CPU-0-pinned launcher verified the same frozen
+C++ workload at 7.842908383 s; bench/NOTES.md records the full correction cycle.

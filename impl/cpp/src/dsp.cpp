@@ -99,8 +99,9 @@ Values remove_cp(const Values& values) {
 Values convolve(const Values& values, const Values& taps) {
     // Retain the causal prefix; the discarded tail lies outside this symbol.
     Values output(values.size());
-    for (std::size_t sample = 0; sample < values.size(); ++sample) {
-        for (std::size_t delay = 0; delay < taps.size() && delay <= sample; ++delay) {
+    // A tap-major traversal keeps samples contiguous without reordering each sum.
+    for (std::size_t delay = 0; delay < taps.size() && delay < values.size(); ++delay) {
+        for (std::size_t sample = delay; sample < values.size(); ++sample) {
             output[sample] += taps[delay] * values[sample - delay];
         }
     }

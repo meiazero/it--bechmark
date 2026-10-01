@@ -65,8 +65,8 @@ struct Counts {
     void add(const Counts& other);
 };
 
-// ponytail: symbol-sized buffers keep the first implementation readable;
-// the single M8 profiler round may replace measured allocation hotspots.
+// ponytail: symbol-sized buffers keep the teaching path readable; full worker
+// buffer reuse belongs to a separate optimized benchmark revision.
 struct Worker {
     const DspConfig config;
     std::mt19937_64 rng;

@@ -12,9 +12,11 @@ were unspecified initial values in the plan and are recorded in the profile.
 PDP values are stored with 17 significant digits. The batch remains 256, the
 payload remains 672 bits, and nominal symbol energy remains 216.
 
-`perf.n_batches` remains null until M8's C++ timing calibration; this is
-not an executable performance workload. The reference validator rejects it in
-perf mode. Golden records have a deterministic-case branch in the result schema;
+At M1, `perf.n_batches` was null pending C++ timing calibration, and the validator
+rejected that uncalibrated input in perf mode. M8 now freezes the main-profile
+count at 2048 after measured CPU-2 work exceeded five seconds; derived null
+configurations remain invalid in perf mode. Golden records have a
+deterministic-case branch in the result schema;
 BER/perf/stages have the point/counter branch described in the plan.
 
 No numerical contract deviation or simulator optimization was applied. SciPy

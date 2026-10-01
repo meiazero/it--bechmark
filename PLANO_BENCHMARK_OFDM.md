@@ -9,8 +9,8 @@ Princípio de justiça: **mesmo algoritmo, mesma carga, mesmo contrato numérico
 ## Uso como lecture: otimização, trade-offs e telecomunicações
 
 A revisão de 2026-09-30 prepara o código já entregue em M0–M4 para uma lecture.
-Nesta revisão, o escopo é C++/IT++, Python/NumPy, Rust e este plano; M5–M10
-continuam pendentes. A versão legível precisa manter as mesmas contagens para
+Nessa revisão inicial, o escopo era C++/IT++, Python/NumPy, Rust e este plano;
+M5–M10 estavam pendentes. A versão legível precisa manter as mesmas contagens para
 cada semente e os mesmos vetores dourados, com evidência anterior/posterior.
 O roteiro executável e as derivações estão em `LECTURE.md`.
 
@@ -20,21 +20,25 @@ M6 também passou: harness, cinco suítes smoke e figuras/tabelas em PT-BR.
 M7 passou com coleta fixa independente: 128 verificações de teoria e 96 pares
 de linguagens, sem incompatibilidade. Os 32 casos AWGN de 16–30 dB com menos de
 100 erros permanecem com evidência insuficiente, sem aprovação automática.
-M8–M10 permanecem pendentes.
+M8 passou no aceite: uma rodada de profiler por linguagem, otimizações mínimas
+e 2.048 lotes congelados após C++ na CPU 2 superar 5 s. M9–M10 permanecem
+pendentes. M8 passou em duas revisões independentes após correções de texto
+e proveniência, sem achado bloqueante restante.
 
 | Bloco | Pergunta que a lecture responde | Evidência prática |
 |---|---|---|
 | Modelo OFDM | Por que o CP transforma a convolução em ganho por subportadora? | golden de CP/canal, Parseval e resposta `H[k]` |
 | Receptor | O que LS, interpolação e ZF preservam ou amplificam? | golden de estimação, gap no DC, caso `Ĥ = 0` |
 | Custo computacional | Qual trabalho é invariável e qual cresce com lote/símbolo? | geometria preparada no setup, convolução direta, FFT de biblioteca |
-| Trade-offs | Como lote vetorizado, buffers por símbolo e processos trocam memória por trabalho? | leitura da mesma cadeia nas três versões; medição completa somente em M8–M9 |
+| Trade-offs | Como lote vetorizado, buffers por símbolo e processos trocam memória por trabalho? | leitura da mesma cadeia nas quatro versões; medição completa somente em M9 |
 | Inferência | O que correção numérica e uma medição curta permitem concluir? | golden/E2E, limites da parada adaptativa, diferença entre compatibilidade e equivalência |
 
 Separar três tipos de afirmação: **derivação** do modelo, **verificação** por
 artefato e **medição** sob protocolo. Remover consultas JSON e geometria
 invariável do laço aproxima C++ da preparação já feita por Python e Rust;
 esta revisão não estima speedup. A única rodada de profiler por linguagem
-continua reservada ao M8, após as quatro versões funcionarem.
+foi executada no M8, após as quatro versões funcionarem; não há estimativa de
+speedup anterior/posterior baseada nessas amostras.
 
 ## Regras para o agente implementador (Codex)
 
@@ -373,7 +377,7 @@ report/
 
 ## Marcos (um commit cada)
 
-Duas fases. A Fase 1 entrega o caminho inteiro funcionando, das quatro implementações até `make analyze`, em carga reduzida. A Fase 2 analisa, corrige, otimiza e só então mede em escala. M0–M7 estão concluídos e commitados; M8–M10 permanecem pendentes.
+Duas fases. A Fase 1 entrega o caminho inteiro funcionando, das quatro implementações até `make analyze`, em carga reduzida. A Fase 2 analisa, corrige, otimiza e só então mede em escala. M0–M8 estão concluídos e commitados; M9–M10 permanecem pendentes.
 
 **Regra da Fase 1:** sem teste estatístico contra teoria, profiling ou calibração. Achado não bloqueante vai para a seção "Pendente para a Fase 2" do `NOTES.md` da linguagem e é resolvido no M7.
 

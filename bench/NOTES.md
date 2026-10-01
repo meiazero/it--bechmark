@@ -240,3 +240,111 @@ verification and explicit provenance corrections. It executed no new profiling
 or primary measurement. M8 closes on main with one feat(m8) commit. M9 requires
 the human-only no_turbo write when its current value is zero; no primary suite
 is launched with turbo on.
+
+## M9 lecture protocol revision before collection
+
+The user asked to continue in the current state after the turbo-off stop.
+The lecture collection therefore keeps no_turbo=0 and uses the existing
+explicit TURBO=on option. No system setting or scientific contract is changed.
+The original turbo-off primary guard remains intact; measurement=turbo_check
+is the existing internal label, and the report will identify this as the full
+turbo-on lecture collection. No unobserved turbo-off result or turbo effect is
+inferred. This decision is recorded before any M9 process or performance result.
+
+The single combined command is make bench SUITE=single,scaling,memory,stages
+TURBO=on. It retains ten fresh processes per perf/stage configuration, random
+language order, twenty-second cooldown, homogeneous E-core scaling, the separate
+12-CPU informative arm, eight ten-minute work-only memory windows, and complete
+CV-triggered repeats with original processes retained. The contract's 2048-batch
+load, independent numerical validation, build flags and profiler budget stay
+frozen. The measured-input estimate is 242 minutes before CV repeats; the extra
+turbo confirmation run is unnecessary because this collection already uses turbo.
+
+## Code-only scope correction and implementation validation
+
+The user explicitly prohibited experimental execution after the initial M9
+start, restricting the task to writing code and assuring validity. The collection
+was stopped immediately after seven completed processes. Run
+results/20261001T010257-124574 is retained with completed=false,
+interrupted_by_user=true and an explicit reason. No remaining simulator/capture
+process for that run exists. No new performance outcome or complete comparison
+is claimed; M9 measurement and the scientific M10 report are deferred.
+
+make check provides short builds, contract/inference checks, all four real golden
+CLIs, planning-only acceptance and report-boundary regression checks. It does not
+call make bench, the smoke harness, profiling or simulation-based validate.
+The existing complete experimental tests remain available for a future explicitly
+authorized run; they are not disabled. make bench-plan / --dry-run validates the
+configuration and planned geometry without probing hardware or launching tools.
+Execution and preview share CPU-position selection. Planning acceptance poisons
+PATH with executable sentinels, verifies none was called, and retains plan.json.
+Duplicate/unknown suite selections are rejected. The full preview schedules
+328 baseline processes and up to 320 repeats; no observed work time is emitted.
+The first plan test incorrectly expected 32 total groups (the noise-checked count)
+instead of 40 including eight memory groups; corrected from the plan's geometry.
+
+Report acceptance first reproduced that a stale config fingerprint could reach
+plotting. The generator now uses common.read_results, verifies homogeneous
+configuration fingerprints before pooling and comparing languages, and rejects
+incomplete runs before output. Invalid-input fixtures include internally valid
+but different loads, not simulated/observed measurements; they never produce
+figures. Isolated stages and adaptive BER do not receive payload throughput or
+performance ratios. The batch variance numerator now uses exact integer moments
+before division, matching the already validated statistical formula. Turbo state
+and the existing internal turbo_check label are described explicitly in reports.
+
+make check passed 27 short checks, including four real golden CLI subcases,
+without any comparative collection. Logs: results/code-check-final.log. No
+contract value, numerical tolerance, lockfile, RNG or DSP algorithm changed.
+
+### Code-only review cycle 1
+
+Fresh read-only Luna review found no blocker and a publication gap: a plotting
+failure could leave a newly written summary alongside an incomplete report.
+A regression case was written before the correction. Report rendering now uses
+a temporary directory; complete assets are promoted only after successful
+rendering, and the previous report is restored if promotion fails. A render
+failure leaves the prior report intact. No measurement was executed to test it.
+
+Local review also found a residual C++ self-ratio interval on repeated stage
+records even when their ratio was inapplicable. The phase-field regression now
+verifies absent throughput/ratio/ratio-interval fields before trapping fixture
+plotting; no fixture figures are published. The condition is fixed. Further
+boundary cases reject differing scaling loads and stale source commits against
+the collection environment before any output. All fixtures are expressly parser
+inputs, not empirical measurements. Their contract-shaped counters only exercise
+trust boundaries and phase semantics.
+
+The complete make check passes 31 short tests (18 contract, 3 inference,
+2 non-executing planning, 1 four-language golden, 7 analysis boundaries).
+Evidence: results/code-check-complete.log. Ruff passes. The original contract,
+lockfiles and DSP implementations remain unchanged; no comparative collection
+has run since cancellation. A fresh final read-only review precedes the
+user-authorized code preparation commit.
+
+### Final code preparation checks
+
+A fresh second review accepted the report publication correction and found no
+remaining issue. The public Make preview default was then independently checked:
+GNU Make split the literal comma-separated fallback into separate or() arguments,
+leaving only single. A regression using make -n was written first; a target-local
+SUITE default now preserves all four suites. The preview explicitly identifies
+its representative command as the first repetition. Finally, a matching hash
+must not legitimize invalid geometry: analysis now calls the existing full
+configuration validator before the strict result validator; its regression
+mutates N_fft and recomputes the fixture hash, then requires rejection.
+
+make check passes 33 short checks (18 contract, 3 inference, 3 planning,
+1 four-language golden and 8 report boundaries), recorded in
+results/code-check-ready.log. Ruff and git diff --check pass. No experiment was
+executed. Final focused fresh review covers the two last corrections before the
+single authorized code-preparation commit. Physical M9/M10 acceptance remains
+explicitly deferred.
+
+### Final read-only review and closure
+
+Fresh focused final review found no blocking or nonblocking issue in the last
+Make preview and full-config-validation corrections. It executed no experiment
+or prohibited test. The user-authorized commit closes code preparation only;
+it does not claim completion of M9 measurements or the M10 scientific report.
+No automatic resumption or scheduled experimental execution is created.

@@ -2,6 +2,7 @@
 
 import argparse
 import copy
+import json
 import os
 import random
 import statistics
@@ -104,10 +105,95 @@ def run_execution(directory, execution, timeout, sample):
     return execution
 
 
+def positions(suite, smoke):
+    selected = (
+        [(1, [2], "p-core"), (1, [4], "e-core")]
+        if suite == "single"
+        else [(p, list(range(4, 4 + p)), "e-core") for p in (1, 2, 4, 8)]
+        if suite == "scaling"
+        else [(p, list(range(4, 4 + p)), "e-core") for p in (1, 8)]
+        if suite == "memory"
+        else [(1, [2], "p-core")]
+    )
+    if suite == "scaling" and not smoke:
+        selected.append((12, list(range(12)), "mixed-informative"))
+    return selected
+
+
+def execution_plan(suites, smoke, turbo_check):
+    profile = contract.load_json(contract.PROFILE)
+    contract.validate_config(profile, "golden" if smoke else "perf")
+    groups = []
+    for suite in suites:
+        for workers, cpus, core in positions(suite, smoke):
+            for language in LANGUAGES:
+                mode = (
+                    "stages"
+                    if suite == "stages"
+                    else "ber"
+                    if suite == "ber"
+                    else "perf"
+                )
+                config = "memory-config.json" if suite == "memory" else "config.json"
+                directory = ROOT / "results/<run_id>"
+                groups.append(
+                    {
+                        "suite": suite,
+                        "impl": language,
+                        "workers": workers,
+                        "cpus": cpus,
+                        "core": core,
+                        "repetitions": 1 if smoke or suite == "memory" else 10,
+                        "possible_repeat_processes": 10
+                        if not smoke and suite in ("single", "scaling", "stages")
+                        else 0,
+                        "work_limit_s": (10 if smoke else 600)
+                        if suite == "memory"
+                        else None,
+                        "command_is_first_repetition": True,
+                        "command": [
+                            "taskset",
+                            "-c",
+                            ",".join(map(str, cpus)),
+                            *command(
+                                language,
+                                workers,
+                                directory / config,
+                                mode,
+                                directory
+                                / f"raw/{suite}-{core}-p{workers}-r0-{language}.jsonl",
+                            ),
+                        ],
+                    }
+                )
+    return {
+        "plan_only": True,
+        "executed": False,
+        "measurement": "smoke"
+        if smoke
+        else "turbo_check"
+        if turbo_check
+        else "primary",
+        "expected_no_turbo": None if smoke else 0 if turbo_check else 1,
+        "perf_n_batches": 4 if smoke else profile["perf"]["n_batches"],
+        "contract_source_sha256": contract.config_sha256(contract.PROFILE.read_bytes()),
+        "cooldown_s": 0 if smoke else 20,
+        "orchestrator_cpu": 0,
+        "order_seed": 20260930,
+        "CV_repeat_threshold": 0.05,
+        "baseline_processes": sum(group["repetitions"] for group in groups),
+        "possible_repeat_processes": sum(
+            group["possible_repeat_processes"] for group in groups
+        ),
+        "groups": groups,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--suite", default="smoke")
     parser.add_argument("--turbo-check", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     smoke = args.suite == "smoke"
     suites = (
@@ -115,11 +201,16 @@ def main():
         if smoke
         else args.suite.split(",")
     )
-    if any(s not in ("single", "stages", "scaling", "memory", "ber") for s in suites):
-        raise ValueError("Unknown benchmark suite")
+    if len(set(suites)) != len(suites) or any(
+        s not in ("single", "stages", "scaling", "memory", "ber") for s in suites
+    ):
+        raise ValueError("Unknown or duplicate benchmark suite")
     order_seed = 20260930
     if smoke and args.turbo_check:
         raise ValueError("Turbo confirmation requires a full suite")
+    if args.dry_run:
+        print(json.dumps(execution_plan(suites, smoke, args.turbo_check), indent=2))
+        return 0
     measurement = "smoke" if smoke else "turbo_check" if args.turbo_check else "primary"
     env = environment(order_seed, measurement)
     allowed = os.sched_getaffinity(0)
@@ -199,19 +290,8 @@ def main():
                 time.sleep(manifest["cooldown_s"])
 
     for suite in suites:
-        positions = (
-            [(1, [2], "p-core"), (1, [4], "e-core")]
-            if suite == "single"
-            else [(p, list(range(4, 4 + p)), "e-core") for p in (1, 2, 4, 8)]
-            if suite == "scaling"
-            else [(p, list(range(4, 4 + p)), "e-core") for p in (1, 8)]
-            if suite == "memory"
-            else [(1, [2], "p-core")]
-        )
-        if suite == "scaling" and not smoke:
-            positions.append((12, list(range(12)), "mixed-informative"))
         repetitions = 1 if suite == "memory" else manifest["repetitions"]
-        for workers, cpus, core in positions:
+        for workers, cpus, core in positions(suite, smoke):
             for repetition in range(repetitions):
                 execute_round(suite, workers, cpus, core, repetition)
             if smoke or suite not in ("single", "scaling", "stages"):

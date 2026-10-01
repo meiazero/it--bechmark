@@ -1,4 +1,4 @@
-# Session state: M8 complete; M9 awaits human turbo control
+# Session state: code-only validation; comparison collection deferred
 
 Updated September 30, 2026. The active request continues remaining milestones
 for an optimization and telecommunications lecture. M0–M8 are committed on main. M8 passed acceptance and two fresh
@@ -43,13 +43,44 @@ Inputs are measured smoke/calibration; scheduling, turbo-off and thermal behavio
 remain uncertain. Quality curves can use independent fixed-budget validation.
 Full memory stability, primary rankings and final report remain M9–M10 work.
 
-AC is connected; perf access works without sudo. Turbo remains on (no_turbo=0).
-Primary M9 requires no_turbo=1, a root-owned human action under the plan's second
-stop condition. No system package, governor, turbo, service or persistent PATH
-was changed by this work. The user installed linux-perf before resuming.
+Current user instruction: write the code and assure validity only; comparison
+experiments are deferred. The user authorized a commit after finishing. Never
+resume or start collection based on the older milestone loop without a new user
+instruction. No new profiling, simulation-based validation collection, cold-build
+timing experiment or make bench/test-bench is authorized in this stage. make test
+also contains a smoke collection and must not be used for the current scope.
 
-Resume: activate pinned tools with eval "$(mise env -s bash)" before make.
-M8 is closed. Recheck turbo and AC before M9; stop for the exact human turbo command if required. Run single, scaling,
-memory and supplementary stages, then generate final PT-BR artifacts from raw
-results with proper separate turbo states. Preserve all raw processes and CV
-repeats. Never combine smoke with primary timing or claim sparse point approval.
+The M9 run results/20261001T010257-124574 was terminated after seven completed
+processes. Its manifest is incomplete with interrupted_by_user=true. Raw files
+and interruption reason are preserved; it is not a completed comparison. The
+make session 81320 ended; all simulator/capture processes for that run are gone.
+results/M9_CANCELLED points to it; no collection is running.
+
+New code-only commands: make check builds all four implementations, then checks
+contracts/inference, a non-executing plan, four real golden interfaces and report
+input boundaries. make bench-plan TURBO=on emits planned commands, affinities,
+process counts and workload without executing tools/simulators or checking live
+hardware. The runner and preview share CPU geometry selection. Unknown and
+duplicate suites are rejected. The full plan has 328 baseline processes and up
+to 320 CV repeat processes; these are scheduled counts, not observed results.
+
+Report input now uses the strict raw-result boundary, refuses stale fingerprints
+and differing configurations within/across comparison groups, and preserves the
+incomplete-run rejection. Payload throughput and relative ratios are limited to
+fixed performance suites, not stage timers or adaptive BER. No experiment was
+run to validate this change: explicitly invalid input fixtures exercise rejection
+before reporting. Old M8 numerical evidence remains available and unchanged.
+
+Validation logs: results/code-check-ready.log and results/acceptance/code-golden/;
+results/acceptance/plan-only/plan.json is the non-executed preview. All 33 short
+checks passed (18 contract, 3 inference, 3 planning, 1 four-language golden,
+8 report-boundary). Ruff passed. Rendering now finishes in a temporary directory before publishing; failures
+preserve or restore the previous report. Phase ratios are inapplicable outside
+fixed performance, and source commits/scaling loads are validated. Final fresh
+read-only review found no findings; the user-authorized code preparation commit
+closes this scope. Comparison experiments remain deferred. The reviewer must not launch experiments. M9 measurements and M10's
+scientific final report, including measured ergonomics, remain deferred.
+
+Activate pinned tools with eval "$(mise env -s bash)" before make. Use make check
+for code assurance. All frozen numerical values, lockfiles, simulator algorithms
+and profiler budgets are unchanged. No system setting or persistent PATH changed.

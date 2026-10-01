@@ -1,5 +1,21 @@
 # Plano: benchmark comparativo de IT++ e Python, Julia e Rust
 
+## Escopo atual: código e validação, sem experimento
+
+O usuário determinou que o experimento comparativo fica para outro momento.
+Nesta etapa, implementar o código e validar com builds, testes curtos,
+vetores dourados e planejamento sem execução. Não rodar novas coletas de
+benchmark, profiling, validação estatística por simulação ou builds cronometrados
+de ergonomia. `make check` verifica o código; `make bench-plan TURBO=on`
+descreve a coleta sem iniciar simuladores nem consultar ferramentas externas.
+`make test` inclui o smoke experimental do harness e fica fora desta etapa.
+
+A coleta M9 iniciada foi encerrada a pedido do usuário após sete execuções,
+preservadas em `results/20261001T010257-124574`, com `completed = false` e
+interrupção registrada. Esses dados não sustentam comparação completa.
+M9 medido e M10 relatório científico final permanecem adiados; comandos de
+aceite experimental abaixo só devem ser usados após autorização futura.
+
 ## Objetivo
 
 Construir um simulador OFDM ponto a ponto reproduzível para comparar a implementação de referência em C++/IT++ com implementações idiomáticas em Python, Julia e Rust. Avaliar separadamente desempenho, correção, memória, escalabilidade e ergonomia; não reduzir o resultado a um único ranking de velocidade.
@@ -282,7 +298,7 @@ Cada execução separa `setup` (config, planos, pool/threads, buffers), `warmup`
 - 10 processos novos por configuração. Em cada rodada, as linguagens rodam em permutação aleatória (semente registrada).
 - Cooldown de 20 s entre execuções; temperatura (`/sys/class/thermal`) registrada antes e depois.
 - Abortar se o notebook estiver na bateria (`/sys/class/power_supply/*/online`).
-- Rodada primária com turbo desligado (`no_turbo = 1`) para estabilidade; uma rodada de conferência com turbo ligado. Os dois estados ficam registrados.
+- Opção documentada para futura coleta da lecture: usar o estado atual com turbo ligado (`no_turbo = 0`), sem alteração do sistema. A opção existente `TURBO=on` registra `measurement = turbo_check`; esse nome interno será explicado no relatório. A coleta completa da lecture usa esse estado, com dez processos, cooldown e controle de ruído. Não há rodada com turbo desligado nem estimativa do efeito causal do turbo. O protocolo anterior de turbo desligado fica como extensão futura, sem exigir alteração do sistema para essa opção. Sua execução está adiada pelo escopo atual.
 - Configuração com CV > 5% é marcada como ruidosa e repetida.
 
 ### Memória
@@ -417,7 +433,7 @@ Para cada marco, de M2 a M10, sem pausa entre eles:
 |---|---|---|
 | M7 Validação e correções | revisão das quatro implementações e do harness contra este plano; testes estatísticos (AWGN e Rayleigh-CSI contra teoria, compatibilidade entre linguagens, determinismo); correção de todo achado, incluindo os pendentes da Fase 1 | `make test`, golden e `make validate` passam; cada achado e correção registrado em `NOTES.md` |
 | M8 Otimização e calibração | uma rodada de profiler por linguagem; depois calibrar `perf.n_batches` (C++ single-thread na CPU 2 ≥ 5 s), gravar no perfil e congelar | golden e `make validate` continuam passando; `n_batches` gravado |
-| M9 Medição completa | suítes `single`, `scaling`, `memory` na carga congelada, com repetições e controle de ruído completos | `make bench SUITE=single` e `make bench SUITE=scaling,memory` geram `results/` completo |
+| M9 Medição completa | suítes `single`, `scaling`, `memory` e `stages` na carga congelada, com turbo ligado para a lecture, repetições e controle de ruído completos | `make bench SUITE=single,scaling,memory,stages TURBO=on` gera `results/` completo |
 | M10 Relatório final | figuras e tabelas em PT-BR, metodologia, limitações, ameaças à validade | todas as figuras regeneram de `results/` com `make analyze` |
 
 Antes do M9, registrar em `bench/NOTES.md` a estimativa de tempo total de máquina (a partir da calibração do M8 e dos tempos medidos no smoke do M6) e seguir sem pausa.
@@ -435,7 +451,7 @@ Antes do M9, registrar em `bench/NOTES.md` a estimativa de tempo total de máqui
 - RNGs diferentes por linguagem: custo de bits e ruído nos estágios `bits`/`awgn`; taps no `e2e` e no profiler, fora do timer de `channel_conv`.
 - Backends FFT diferentes: FFTW (IT++ via apt e FFTW.jl com versões possivelmente distintas), pocketfft (NumPy), rustfft. C++ delega o ciclo de vida dos planos à interface IT++; Rust retém planos e scratch explícitos. M0 verificou flags e escala, não reutilização de planos; M8 deve observar esse custo.
 - IT++ do apt compilada com flags genéricas; C++ do usuário com `-march=native`.
-- CPU híbrida e notebook com limite térmico: mitigados por pinagem, turbo desligado, cooldown e ordem aleatória, não eliminados.
+- CPU híbrida e notebook com limite térmico: pinagem, cooldown e ordem aleatória reduzem variação. A lecture usa turbo ligado por decisão anterior à coleta; frequência dinâmica e aquecimento permanecem ameaças à validade e serão reportados com CV e temperatura.
 - Autoria por agente de IA nas quatro linguagens.
 
 ## Decisões assumidas (mudar aqui se discordar)
@@ -443,4 +459,4 @@ Antes do M9, registrar em `bench/NOTES.md` a estimativa de tempo total de máqui
 1. Somente 16-QAM na trilha principal; 64-QAM como extensão.
 2. Somente APIs padrão; versões aceleradas (Numba, JAX etc.) em trilha separada.
 3. Orçamento de máquina desconhecido: o M6 mede o smoke, o M8 calibra e a estimativa fica registrada antes do M9, sem pausa.
-4. Turbo desligado na rodada primária.
+4. Para esta lecture, continuar com turbo ligado, como opção de protocolo discutida antes de M9; não executar até autorização futura. Registrar o estado e a variação observada; não comparar estados de turbo que não foram medidos.

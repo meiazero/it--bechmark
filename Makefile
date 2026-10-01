@@ -6,7 +6,7 @@ export PYTHONHASHSEED := 0
 .PHONY: doctor golden test build-cpp test-cpp build-python test-python
 .PHONY: build-rust test-rust
 .PHONY: build-julia test-julia
-.PHONY: bench analyze test-bench validate
+.PHONY: bench bench-plan check analyze test-bench validate
 
 doctor:
 	python tools/check_system.py
@@ -46,6 +46,17 @@ test-julia: build-julia
 
 bench: build-cpp build-python build-rust build-julia
 	uv run --project tools --locked python -m bench --suite $(or $(SUITE),smoke) $(if $(filter on,$(TURBO)),--turbo-check)
+
+bench-plan: SUITE ?= single,scaling,memory,stages
+bench-plan:
+	uv run --project tools --locked python -m bench --suite $(SUITE) $(if $(filter on,$(TURBO)),--turbo-check) --dry-run
+
+check: build-cpp build-python build-rust build-julia
+	uv run --project tools --locked python -m unittest discover -s tools -p test_contract.py -v
+	uv run --project tools --locked python -m unittest discover -s tools -p test_stats.py -v
+	uv run --project tools --locked python -m unittest discover -s tools -p test_bench_plan.py -v
+	uv run --project tools --locked python -m unittest discover -s tools -p test_code_golden.py -v
+	uv run --project tools --locked python -m unittest discover -s tools -p test_analysis_boundaries.py -v
 
 analyze:
 	uv run --project tools --locked python -m bench.analyze $(if $(RUN),--run $(RUN))

@@ -115,3 +115,13 @@ recording CPU 0; original observations and metadata-corrections.json preserve
 that provenance defect. Each profiler/simulator was correctly pinned to CPU 2.
 No profiler round was repeated. A CPU-0-pinned launcher verified the same frozen
 C++ workload at 7.842908383 s; bench/NOTES.md records the full correction cycle.
+
+## Code-only continuation
+
+The user deferred comparison experiments. The shared make check target validates
+this implementation's golden CLI without random comparison collection; no new
+DSP, RNG, contract or dependency change was made. The shared planner has a true
+non-executing path. Report input now rejects stale fingerprints, differing loads
+and incomplete collections before output, and separates performance metrics from
+stage/BER counters. bench/NOTES.md records the shared defects and corrections.
+The interrupted M9 run is retained as incomplete, not a performance conclusion.

@@ -1,11 +1,12 @@
 # Relatório da lecture OFDM
 
-Gere as tabelas e figuras a partir dos dados brutos:
+O experimento comparativo está adiado por instrução do usuário. Nesta etapa,
+valide o código e visualize o plano sem coletar dados:
 
 ```bash
 eval "$(mise env -s bash)"
-make bench SUITE=smoke
-make analyze
+make check
+make bench-plan TURBO=on
 ```
 
 O arquivo `report/LATEST` aponta para a execução analisada. Cada diretório contém
@@ -20,3 +21,10 @@ e calibração; M9 coleta o protocolo completo; M10 fecha a interpretação.
 Para a lecture, siga `LECTURE.md`: modelo físico, operador numérico, artefato de
 verificação e medição são evidências diferentes. A figura de estágios mostra
 onde o trabalho acontece; seu resíduo não é decomposição exata de custo.
+
+Quando houver autorização para coletar e uma execução completa, `make analyze
+RUN=/caminho/da/execucao` regenera tabelas e figuras. O gerador rejeita coletas
+incompletas, hashes inválidos e configurações diferentes misturadas. Vazão e
+razões relativas só aparecem para cargas fixas de desempenho. A coleta M9
+interrompida não é fonte de um relatório final; nenhuma conclusão de velocidade
+ou estabilidade em dez minutos foi produzida nesta continuação.

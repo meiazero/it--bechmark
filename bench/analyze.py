@@ -3,6 +3,7 @@
 import argparse
 import csv
 import math
+import tempfile
 from collections import defaultdict
 from pathlib import Path
 
@@ -13,7 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy import stats
 
-from bench.common import LANGUAGES, ROOT
+from bench.common import LANGUAGES, ROOT, read_results
 from tools import contract
 
 LABELS = {"cpp": "C++/IT++", "python": "Python/NumPy", "rust": "Rust", "julia": "Julia"}
@@ -66,9 +67,8 @@ def batch_interval(record, alpha=0.05):
     mean = record["n_errors"] / (n * m)
     if n < 2:
         return None, None, "lotes insuficientes"
-    variance = max(
-        0.0, (record["sum_batch_errors_sq"] - record["n_errors"] ** 2 / n) / (n - 1)
-    )
+    numerator = n * record["sum_batch_errors_sq"] - record["n_errors"] ** 2
+    variance = numerator / (n * (n - 1))
     radius = stats.t.ppf(1 - alpha / 2, n - 1) * math.sqrt(variance / n) / m
     return (
         max(0.0, mean - radius),
@@ -92,23 +92,31 @@ def save_figure(fig, destination, name):
     plt.close(fig)
 
 
-def analyze(directory):
+def render_report(directory, destination):
     manifest = contract.load_json(directory / "manifest.json")
     env = contract.load_json(directory / "env.json")
     if not manifest["completed"]:
         raise ValueError("Analysis requires a completed run")
-    destination = ROOT / "report" / directory.name
-    destination.mkdir(parents=True, exist_ok=True)
     grouped = defaultdict(list)
     captures = {}
     for execution in manifest["executions"]:
         captures[execution["id"]] = contract.load_json(directory / execution["capture"])
         if execution["status"] == "complete":
-            records = [
-                contract.parse_json(line)
-                for line in (directory / execution["output"]).read_text().splitlines()
-            ]
+            contract.validate_config(
+                contract.load_json(directory / execution["config"]), execution["mode"]
+            )
+            records = read_results(
+                directory / execution["output"],
+                directory / execution["config"],
+                execution["impl"],
+                execution["workers"],
+                execution["mode"],
+            )
             for record in records:
+                if record["git_sha"] != env["git_sha"]:
+                    raise ValueError(
+                        "Result source commit differs from collection environment"
+                    )
                 grouped[
                     (
                         execution["suite"],
@@ -120,15 +128,25 @@ def analyze(directory):
                 ].append((execution, record))
     rows = []
     for (suite, core, workers, language, point), entries in grouped.items():
+        fingerprints = {record["config_sha256"] for _, record in entries}
+        if len(fingerprints) != 1:
+            raise ValueError("Cannot pool different configurations within one group")
+        fixed_perf = suite in ("single", "scaling")
         values = [r["work_s"] for _, r in entries]
         median = float(np.median(values))
         lower, upper = bootstrap(values)
         bits = entries[0][1]["n_bits"]
-        reference = grouped.get((suite, core, workers, "cpp", point), [])
+        reference = (
+            grouped.get((suite, core, workers, "cpp", point), []) if fixed_perf else []
+        )
+        if any(record["config_sha256"] not in fingerprints for _, record in reference):
+            raise ValueError("Language comparisons require identical configurations")
         reference_times = [r["work_s"] for _, r in reference]
         relative = float(np.median(reference_times)) / median if reference else None
         ratio_lower, ratio_upper = (
-            (1.0, 1.0)
+            (None, None)
+            if not fixed_perf
+            else (1.0, 1.0)
             if language == "cpp" and len(values) > 1
             else bootstrap_ratio(reference_times, values)
         )
@@ -155,7 +173,7 @@ def analyze(directory):
                 "IQR_s": float(np.quantile(values, 0.75) - np.quantile(values, 0.25)),
                 "IC95_inferior_s": lower,
                 "IC95_superior_s": upper,
-                "vazão_Mbit_s": bits / median / 1e6,
+                "vazão_Mbit_s": bits / median / 1e6 if fixed_perf else None,
                 "aceleração_relativa_Cpp": relative,
                 "IC95_aceleração_inferior": ratio_lower,
                 "IC95_aceleração_superior": ratio_upper,
@@ -170,6 +188,18 @@ def analyze(directory):
                 ),
             }
         )
+    for suite in ("single", "scaling"):
+        fingerprints = {
+            record["config_sha256"]
+            for key, entries in grouped.items()
+            if key[0] == suite
+            for _, record in entries
+        }
+        if len(fingerprints) > 1:
+            raise ValueError(
+                "Fixed performance suites require identical configurations"
+            )
+    destination.mkdir(parents=True, exist_ok=True)
     with (destination / "summary.csv").open("w", newline="") as file:
         columns = (
             "suíte",
@@ -584,7 +614,7 @@ Execução `{directory.name}`. Fonte bruta: `{directory}`.
 
 ## Ler os artefatos
 
-1. `summary.csv`: tempos por fase; vazão usa dados úteis/trabalho.
+1. `summary.csv`: tempos por fase; vazão e razões só para cargas fixas de desempenho.
 2. `stages.csv`: medianas e resíduo e2e menos soma; não é decomposição exata.
 3. `scaling.csv`: referência serial no núcleo E, CPU 4.
 4. `memory.csv`: pico do grupo, memória residente e inclinação; inclui observador.
@@ -620,8 +650,13 @@ CV acima de 5% foi sinalizado em {noise_count} configurações. Em carga complet
 a rodada adicional conserva os processos originais e repete todas as linguagens;
 nenhum resultado favorável substitui uma observação. IC de razões usa bootstrap
 independente das medianas; eficiência conserva a referência serial no núcleo E.
-Conferência com turbo ligado exige execução separada `TURBO=on`. Calibração,
-medições completas e ergonomia final permanecem nos respectivos marcos.
+Estado desta execução: `{env.get("measurement", "não registrado")}`; turbo
+{"ligado" if env["no_turbo"] == 0 else "desligado"}. A opção `TURBO=on` usa o nome
+interno `turbo_check`; o estado observado define a interpretação. Nenhum efeito
+entre estados de turbo é inferido de uma única execução. Tempos, hashes e
+configurações são validados antes de produzir tabelas ou figuras. Coletas
+incompletas são rejeitadas. Ergonomia e coleta experimental podem estar pendentes;
+este gerador não executa simuladores nem coleta novos dados.
 
 Regenerar: `make analyze RUN={directory}`.
 """
@@ -647,8 +682,37 @@ Regenerar: `make analyze RUN={directory}`.
             "missing_intervals": "No bootstrap interval for one process",
         },
     )
-    if "projection_source" not in manifest:
-        (ROOT / "report/LATEST").write_text(directory.name + "\n")
+    return "projection_source" not in manifest
+
+
+def analyze(directory):
+    report_root = ROOT / "report"
+    report_root.mkdir(parents=True, exist_ok=True)
+    destination = report_root / directory.name
+    if destination.exists() and not destination.is_dir():
+        raise ValueError("Report destination must be a generated directory")
+    with tempfile.TemporaryDirectory(
+        prefix=f".{directory.name}-", dir=report_root
+    ) as name:
+        temporary = Path(name)
+        generated = temporary / "generated"
+        publish_latest = render_report(directory, generated)
+        latest = temporary / "LATEST"
+        if publish_latest:
+            latest.write_text(directory.name + "\n")
+        previous = temporary / "previous"
+        if destination.exists():
+            destination.rename(previous)
+        try:
+            generated.rename(destination)
+            if publish_latest:
+                latest.replace(report_root / "LATEST")
+        except OSError:
+            if destination.exists():
+                destination.rename(generated)
+            if previous.exists():
+                previous.rename(destination)
+            raise
     print(f"Generated lecture report: {destination}")
     return destination
 

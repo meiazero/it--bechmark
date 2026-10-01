@@ -9,12 +9,28 @@ remain M9 work. Smoke timings demonstrate execution only.
 
 ## 1. Start with an executable numerical model
 
+Current scope is code assurance only. Comparison experiments are deferred.
+`make check` builds and checks the four golden interfaces plus short contract,
+inference and report-boundary tests; it does not collect benchmark measurements.
+`make test` also runs the smoke harness and is reserved for later authorization.
+Preview the future full collection without executing it:
+
+```bash
+eval "$(mise env -s bash)"
+make bench-plan TURBO=on
+```
+
+The preview emits scheduled commands and counts, not measurements. Its generated
+acceptance artifact is `results/acceptance/plan-only/plan.json`. The interrupted
+M9 collection remains incomplete and cannot be analyzed as a final comparison.
+
+
 Activate the pinned tools in a noninteractive Bash shell and run acceptance:
 
 ```bash
 eval "$(mise env -s bash)"
 make doctor
-make test
+make check
 ```
 
 The E2E scenarios write inputs and outputs under
